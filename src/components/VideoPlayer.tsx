@@ -133,8 +133,8 @@ export default function VideoPlayer({ video, onClose, isTamilanPlanActive, onPla
       return;
     }
 
-    // Seek detection (existing logic improved)
-    if (currentTime - lastTimeRef.current > 60 && !ignoreNextSeekRef.current) {
+    // Seek detection: Trigger ads on any forward seek
+    if (currentTime - lastTimeRef.current > 1.5 && !ignoreNextSeekRef.current) {
       videoElement.pause();
       const resumeTime = currentTime;
       
