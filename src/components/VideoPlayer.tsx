@@ -1,6 +1,11 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { X, ChevronLeft, ThumbsUp, ThumbsDown, Share2, Download, Scissors, MoreHorizontal, MoreVertical, Bell, Info } from 'lucide-react';
+import { 
+  X, ChevronLeft, ThumbsUp, ThumbsDown, Share2, Download, 
+  Scissors, MoreHorizontal, MoreVertical, Bell, Info,
+  Play, Pause, RotateCcw, RotateCw, Volume2, VolumeX,
+  Maximize, Minimize, Settings, MessageSquare, SkipBack, SkipForward
+} from 'lucide-react';
 import { Video } from '../types';
 
 interface VideoPlayerProps {
@@ -26,7 +31,15 @@ export default function VideoPlayer({ video, onClose, isTamilanPlanActive, onPla
   const [isLiked, setIsLiked] = useState(false);
   const [isDisliked, setIsDisliked] = useState(false);
   const [playedMidRolls, setPlayedMidRolls] = useState<number[]>([]);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [duration, setDuration] = useState(0);
+  const [volume, setVolume] = useState(1);
+  const [isMuted, setIsMuted] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [showControls, setShowControls] = useState(true);
   
+  const containerRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const adVideoRef = useRef<HTMLVideoElement>(null);
   const lastTimeRef = useRef(0);
@@ -113,9 +126,12 @@ export default function VideoPlayer({ video, onClose, isTamilanPlanActive, onPla
   };
 
   const handleTimeUpdate = (e: React.SyntheticEvent<HTMLVideoElement>) => {
+    const videoElement = e.currentTarget;
+    setCurrentTime(videoElement.currentTime);
+    setDuration(videoElement.duration);
+    
     if (isAdPlaying || isTamilanPlanActive) return;
     
-    const videoElement = e.currentTarget;
     const currentTime = videoElement.currentTime;
     
     // Mid-roll logic: Try to play an ad every 45 seconds of playback
@@ -151,6 +167,70 @@ export default function VideoPlayer({ video, onClose, isTamilanPlanActive, onPla
     }
   };
 
+  const togglePlay = () => {
+    if (isAdPlaying) return;
+    if (videoRef.current) {
+      if (isPlaying) {
+        videoRef.current.pause();
+      } else {
+        videoRef.current.play();
+      }
+      setIsPlaying(!isPlaying);
+    }
+  };
+
+  const skip = (seconds: number) => {
+    if (videoRef.current) {
+      videoRef.current.currentTime += seconds;
+    }
+  };
+
+  const handleProgressChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const time = parseFloat(e.target.value);
+    if (videoRef.current) {
+      videoRef.current.currentTime = time;
+      setCurrentTime(time);
+    }
+  };
+
+  const toggleMute = () => {
+    if (videoRef.current) {
+      videoRef.current.muted = !isMuted;
+      setIsMuted(!isMuted);
+    }
+  };
+
+  const handleVolumeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const v = parseFloat(e.target.value);
+    setVolume(v);
+    if (videoRef.current) {
+      videoRef.current.volume = v;
+      videoRef.current.muted = v === 0;
+      setIsMuted(v === 0);
+    }
+  };
+
+  const toggleFullscreen = () => {
+    if (!containerRef.current) return;
+
+    if (!document.fullscreenElement) {
+      containerRef.current.requestFullscreen().catch(err => {
+        console.error(`Error attempting to enable full-screen mode: ${err.message}`);
+      });
+      setIsFullscreen(true);
+    } else {
+      document.exitFullscreen();
+      setIsFullscreen(false);
+    }
+  };
+
+  const formatTime = (time: number) => {
+    if (isNaN(time)) return "0:00";
+    const minutes = Math.floor(time / 60);
+    const seconds = Math.floor(time % 60);
+    return `${minutes}:${seconds < 10 ? '0' : ''}${seconds}`;
+  };
+
   return (
     <AnimatePresence>
       <motion.div
@@ -160,8 +240,8 @@ export default function VideoPlayer({ video, onClose, isTamilanPlanActive, onPla
         exit={{ opacity: 0, y: 20 }}
         className="fixed inset-0 z-50 bg-bg-dark flex flex-col overflow-y-auto"
       >
-        <div className="sticky top-0 z-50 bg-black w-full aspect-video">
-          <div className="absolute top-4 left-4 z-20">
+        <div ref={containerRef} className="sticky top-0 z-50 bg-black w-full aspect-video group">
+          <div className={`absolute top-4 left-4 z-20 transition-opacity duration-300 ${showControls ? 'opacity-100' : 'opacity-0'}`}>
             <button 
               onClick={onClose}
               className="p-2 bg-black/40 rounded-full hover:bg-black/60 transition-colors text-white"
@@ -170,7 +250,13 @@ export default function VideoPlayer({ video, onClose, isTamilanPlanActive, onPla
             </button>
           </div>
 
-          <div className="w-full h-full relative">
+          <div className="w-full h-full relative" onMouseMove={() => {
+            setShowControls(true);
+            const timeout = setTimeout(() => {
+              if (isPlaying && !isAdPlaying) setShowControls(false);
+            }, 3000);
+            return () => clearTimeout(timeout);
+          }}>
             {/* Background Thumbnail for continuity */}
             <div 
               className="absolute inset-0 z-0 opacity-40 blur-xl scale-110"
@@ -212,12 +298,111 @@ export default function VideoPlayer({ video, onClose, isTamilanPlanActive, onPla
             <video
               ref={videoRef}
               autoPlay={false}
-              controls={!isAdPlaying}
+              controls={false}
               className={`w-full h-full object-contain ${isAdPlaying ? 'hidden' : ''}`}
               src={video.videoUrl}
               onTimeUpdate={handleTimeUpdate}
+              onPlay={() => setIsPlaying(true)}
+              onPause={() => setIsPlaying(false)}
+              onLoadedMetadata={(e) => setDuration(e.currentTarget.duration)}
               poster={video.thumbnail}
+              onClick={togglePlay}
             />
+
+            {/* Custom Controls Overlay */}
+            {!isAdPlaying && (
+              <div className={`absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/40 flex flex-col justify-between transition-opacity duration-300 ${showControls || !isPlaying ? 'opacity-100' : 'opacity-0'}`}>
+                {/* Center Play Button */}
+                <div className="flex-1 flex items-center justify-center">
+                  <motion.button
+                    whileHover={{ scale: 1.1 }}
+                    whileTap={{ scale: 0.9 }}
+                    onClick={togglePlay}
+                    className="w-20 h-20 bg-white/20 backdrop-blur-md rounded-full flex items-center justify-center text-white border border-white/20 shadow-2xl transition-all hover:bg-white/30"
+                  >
+                    {isPlaying ? <Pause className="w-10 h-10" /> : <Play className="w-10 h-10 ml-1" />}
+                  </motion.button>
+                </div>
+
+                {/* Bottom Controls */}
+                <div className="p-4 md:p-6 flex flex-col gap-2">
+                  {/* Progress Bar */}
+                  <div className="relative group/progress h-1 flex items-center mb-4">
+                    <input
+                      type="range"
+                      min={0}
+                      max={duration}
+                      step={0.1}
+                      value={currentTime}
+                      onChange={handleProgressChange}
+                      className="absolute inset-0 w-full opacity-0 z-20 cursor-pointer"
+                    />
+                    <div className="absolute inset-0 w-full h-1 bg-white/20 rounded-full overflow-hidden">
+                      <div 
+                        className="h-full bg-brand-primary" 
+                        style={{ width: `${(currentTime / duration) * 100}%` }}
+                      ></div>
+                    </div>
+                    {/* Thumb handle */}
+                    <div 
+                      className="absolute top-1/2 -translate-y-1/2 w-4 h-4 bg-white rounded-full shadow-lg border-2 border-brand-primary z-10 transition-transform scale-0 group-hover/progress:scale-100 pointer-events-none"
+                      style={{ left: `${(currentTime / duration) * 100}%`, transform: `translate(-50%, -50%) scale(${showControls ? 1 : 0})` }}
+                    />
+                    
+                    {/* Time Tooltip */}
+                    <div className="flex justify-between w-full text-[10px] sm:text-xs font-mono text-white/70 mt-4 absolute top-0">
+                      <span>{formatTime(currentTime)}</span>
+                      <span>{formatTime(duration)}</span>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-6">
+                      {/* Volume */}
+                      <div className="flex items-center gap-2 group/volume relative">
+                        <button onClick={toggleMute} className="text-white hover:text-brand-primary transition-colors">
+                          {isMuted || volume === 0 ? <VolumeX className="w-6 h-6" /> : <Volume2 className="w-6 h-6" />}
+                        </button>
+                        <input
+                          type="range"
+                          min={0}
+                          max={1}
+                          step={0.01}
+                          value={isMuted ? 0 : volume}
+                          onChange={handleVolumeChange}
+                          className="w-0 group-hover/volume:w-24 transition-all overflow-hidden h-1 accent-brand-primary cursor-pointer"
+                        />
+                      </div>
+
+                      {/* Playback Controls (Center/Left) */}
+                      <div className="flex items-center gap-6">
+                        <button onClick={() => skip(-10)} className="text-white hover:text-brand-primary transition-colors p-1">
+                          <SkipBack className="w-6 h-6" />
+                        </button>
+                        <button onClick={togglePlay} className="text-white hover:text-brand-primary transition-colors p-1">
+                          {isPlaying ? <Pause className="w-7 h-7" /> : <Play className="w-7 h-7 fill-white" />}
+                        </button>
+                        <button onClick={() => skip(10)} className="text-white hover:text-brand-primary transition-colors p-1">
+                          <SkipForward className="w-6 h-6" />
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-6">
+                      <button className="text-white hover:text-brand-primary transition-colors p-1">
+                        <Settings className="w-5 h-5" />
+                      </button>
+                      <button className="text-white hover:text-brand-primary transition-colors p-1">
+                        <MessageSquare className="w-5 h-5" /> {/* CC */}
+                      </button>
+                      <button onClick={toggleFullscreen} className="text-white hover:text-brand-primary transition-colors p-1">
+                        {isFullscreen ? <Minimize className="w-6 h-6" /> : <Maximize className="w-6 h-6" />}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         </div>
 
