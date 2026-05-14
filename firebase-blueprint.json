@@ -1,0 +1,24 @@
+{
+  "entities": {
+    "Comment": {
+      "title": "Comment",
+      "description": "A user comment on a video",
+      "type": "object",
+      "properties": {
+        "videoId": { "type": "string" },
+        "userId": { "type": "string" },
+        "userName": { "type": "string" },
+        "text": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "likes": { "type": "number" }
+      },
+      "required": ["videoId", "userId", "userName", "text", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/comments/{commentId}": {
+      "schema": "Comment",
+      "description": "Global collection of comments for all videos"
+    }
+  }
+}

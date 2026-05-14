@@ -1,0 +1,54 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Default deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Helper functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // Validation for Comment
+    function isValidComment(data) {
+      return data.keys().hasAll(['videoId', 'userId', 'userName', 'text', 'createdAt']) &&
+             data.videoId is string && data.videoId.size() <= 128 &&
+             data.userId is string && data.userId.size() <= 128 &&
+             data.userName is string && data.userName.size() <= 100 &&
+             data.text is string && data.text.size() <= 2000 &&
+             (data.get('likes', 0) is number);
+    }
+
+    match /comments/{commentId} {
+      // Rule 8: The rule itself must validate the resource being queried
+      // For public comments, we allow listing if they are valid.
+      allow read, list: if true; 
+
+      allow create: if isSignedIn() && 
+                    isValidComment(incoming()) && 
+                    incoming().userId == request.auth.uid &&
+                    incoming().createdAt == request.time;
+      
+      allow update: if isSignedIn() && 
+                    isValidComment(incoming()) &&
+                    (
+                      // Author updating text
+                      (incoming().userId == request.auth.uid && incoming().diff(existing()).affectedKeys().hasOnly(['text', 'updatedAt'])) ||
+                      // Anyone liking/disliking (simplified for now, ideally needs a 'likes' subcollection for atomic prevents of multiple likes)
+                      (incoming().diff(existing()).affectedKeys().hasOnly(['likes']))
+                    );
+                    
+      allow delete: if isSignedIn() && request.auth.uid == existing().userId;
+    }
+  }
+}

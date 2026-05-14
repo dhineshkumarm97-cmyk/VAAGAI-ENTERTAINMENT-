@@ -30,40 +30,6 @@ const MOCK_VIDEOS: Video[] = [
     language: 'tamil'
   },
   {
-    id: '2',
-    title: 'Hindi Epic Adventure - The Journey Begins',
-    description: 'A grand exploration of the northern mountains and the legends that live within them.',
-    thumbnail: 'https://images.unsplash.com/photo-1524492412937-b28074a5d7da?q=80&w=2071&auto=format&fit=crop',
-    videoUrl: 'https://res.cloudinary.com/dkc9ru68y/video/upload/v1778682664/AQPljtACF3Gie1XyO9z11wAoJdIkB2FXfDZnvHKfJth_Br4-NDdBD3cgecUHH06IrQIFLRWUt9p5woPAtdqR38_X_sttldo.mp4',
-    category: 'Trending',
-    year: '2023',
-    duration: '24:10',
-    rating: 'UA',
-    views: '3.4M',
-    uploadedAt: '1 month ago',
-    channelName: 'North Star India',
-    channelAvatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?q=80&w=100',
-    subscribers: '1.2M',
-    language: 'hindi'
-  },
-  {
-    id: '3',
-    title: 'Telugu Cultural Dance Performance',
-    description: 'Breathtaking Kuchipudi dance performance by world-renowned artists.',
-    thumbnail: 'https://images.unsplash.com/photo-1530731141654-5993c3016c77?q=80&w=2070&auto=format&fit=crop',
-    videoUrl: 'https://res.cloudinary.com/dkc9ru68y/video/upload/v1778682664/AQPljtACF3Gie1XyO9z11wAoJdIkB2FXfDZnvHKfJth_Br4-NDdBD3cgecUHH06IrQIFLRWUt9p5woPAtdqR38_X_sttldo.mp4',
-    category: 'Trending',
-    year: '2024',
-    duration: '08:15',
-    rating: 'UA',
-    views: '890K',
-    uploadedAt: '1 week ago',
-    channelName: 'South Arts',
-    channelAvatar: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?q=80&w=100',
-    subscribers: '450K',
-    language: 'telugu'
-  },
-  {
     id: '4',
     title: 'Malayalam Nature Documentary: Western Ghats',
     description: 'Deep dive into the biodiversity of the magical Western Ghats.',
@@ -130,6 +96,57 @@ const MOCK_VIDEOS: Video[] = [
     channelAvatar: 'https://images.unsplash.com/photo-1551009175-15bdf9dcb580?q=100&w=100',
     subscribers: '560K',
     language: 'marathi'
+  },
+  {
+    id: '8',
+    title: 'Love Insurance Kompany (2026) - Official Stream',
+    description: 'Love Insurance Kompany (LIK) is an upcoming Indian Tamil-language science fiction romantic comedy film written and directed by Vignesh Shivan. It features Pradeep Ranganathan, Krithi Shetty and S. J. Suryah in the lead roles.',
+    thumbnail: 'https://images.unsplash.com/photo-1536440136628-849c177e76a1?q=80&w=2025&auto=format&fit=crop',
+    videoUrl: 'https://www.youtube.com/watch?v=6P1wA6a7yIs',
+    category: 'Movies',
+    year: '2026',
+    duration: '02:45:00',
+    rating: 'UA',
+    views: '5.6M',
+    uploadedAt: 'Today',
+    channelName: 'Vignesh Shivan Films',
+    channelAvatar: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?q=80&w=100',
+    subscribers: '1.2M',
+    language: 'tamil'
+  },
+  {
+    id: '9',
+    title: 'New Tamil Movie Trailer',
+    description: 'Check out the official teaser/trailer of this highly anticipated upcoming Tamil film.',
+    thumbnail: 'https://images.unsplash.com/photo-1485846234645-a62644f84728?q=80&w=2059&auto=format&fit=crop',
+    videoUrl: 'https://www.youtube.com/watch?v=pIm6Ld-JNqw',
+    category: 'Trailers',
+    year: '2024',
+    duration: '02:18',
+    rating: 'UA',
+    views: '2.3M',
+    uploadedAt: '1 day ago',
+    channelName: 'Tamil Cinema Hub',
+    channelAvatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?q=80&w=100',
+    subscribers: '890K',
+    language: 'tamil'
+  },
+  {
+    id: '10',
+    title: 'OneStream Live Stream',
+    description: 'Special live stream event on OneStream platform.',
+    thumbnail: 'https://images.unsplash.com/photo-1516035069371-29a1b244cc32?q=80&w=1000&auto=format&fit=crop',
+    videoUrl: 'https://play.onestream.today/stream/page/98555',
+    category: 'Live',
+    year: '2024',
+    duration: 'Live',
+    rating: 'UA',
+    views: '150K',
+    uploadedAt: 'Live Now',
+    channelName: 'OneStream Live',
+    channelAvatar: 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?q=80&w=100',
+    subscribers: '300K',
+    language: 'english'
   }
 ];
 
@@ -280,6 +297,12 @@ export default function App() {
         onClose={() => setSelectedVideo(null)} 
         isTamilanPlanActive={isTamilanPlanActive}
         onPlanActive={() => setIsTamilanPlanActive(true)}
+        onNextVideo={() => {
+          if (!selectedVideo) return;
+          const currentIndex = MOCK_VIDEOS.findIndex(v => v.id === selectedVideo.id);
+          const nextIndex = (currentIndex + 1) % MOCK_VIDEOS.length;
+          setSelectedVideo(MOCK_VIDEOS[nextIndex]);
+        }}
       />
     </div>
   );

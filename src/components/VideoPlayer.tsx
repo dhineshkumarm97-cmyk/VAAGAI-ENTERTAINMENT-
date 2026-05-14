@@ -4,30 +4,119 @@ import {
   X, ChevronLeft, ThumbsUp, ThumbsDown, Share2, Download, 
   Scissors, MoreHorizontal, MoreVertical, Bell, Info,
   Play, Pause, RotateCcw, RotateCw, Volume2, VolumeX,
-  Maximize, Minimize, Settings, MessageSquare, SkipBack, SkipForward
+  Maximize, Minimize, Settings, MessageSquare, SkipBack, SkipForward,
+  Cast
 } from 'lucide-react';
 import { Video } from '../types';
+import { db, auth, signInWithGoogle } from '../lib/firebase';
+import { 
+  collection, 
+  addDoc, 
+  query, 
+  where, 
+  orderBy, 
+  onSnapshot, 
+  serverTimestamp, 
+  Timestamp,
+  doc,
+  updateDoc,
+  deleteDoc
+} from 'firebase/firestore';
+
+enum OperationType {
+  CREATE = 'create',
+  UPDATE = 'update',
+  DELETE = 'delete',
+  LIST = 'list',
+  GET = 'get',
+  WRITE = 'write',
+}
+
+interface FirestoreErrorInfo {
+  error: string;
+  operationType: OperationType;
+  path: string | null;
+  authInfo: {
+    userId?: string | null;
+    email?: string | null;
+    emailVerified?: boolean | null;
+    isAnonymous?: boolean | null;
+    tenantId?: string | null;
+    providerInfo?: {
+      providerId?: string | null;
+      email?: string | null;
+    }[];
+  }
+}
+
+function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
+  const errInfo: FirestoreErrorInfo = {
+    error: error instanceof Error ? error.message : String(error),
+    authInfo: {
+      userId: auth.currentUser?.uid,
+      email: auth.currentUser?.email,
+      emailVerified: auth.currentUser?.emailVerified,
+      isAnonymous: auth.currentUser?.isAnonymous,
+      tenantId: auth.currentUser?.tenantId,
+      providerInfo: auth.currentUser?.providerData?.map(provider => ({
+        providerId: provider.providerId,
+        email: provider.email,
+      })) || []
+    },
+    operationType,
+    path
+  }
+  console.error('Firestore Error: ', JSON.stringify(errInfo));
+  throw new Error(JSON.stringify(errInfo));
+}
+
+interface Comment {
+  id: string;
+  videoId: string;
+  userId: string;
+  userName: string;
+  text: string;
+  createdAt: any;
+  likes: number;
+}
 
 interface VideoPlayerProps {
   video: Video | null;
   onClose: () => void;
   isTamilanPlanActive: boolean;
   onPlanActive: () => void;
+  onNextVideo: () => void;
 }
 
 const MOCK_ADS = [
-  'https://res.cloudinary.com/dkc9ru68y/video/upload/v1778679811/vidssave.com_MARLIA_ADS-_SATHYA_SAMY_ARUL___TVC___TAMIL___KAYADU_LOHAR_1080P_krg6mv.mp4',
-  'https://assets.mixkit.co/videos/preview/mixkit-abstract-fast-moving-light-streaks-34757-large.mp4',
-  'https://assets.mixkit.co/videos/preview/mixkit-stars-in-the-night-sky-121-large.mp4'
+  'https://res.cloudinary.com/dkc9ru68y/video/upload/v1778762709/vidssave.com_Vasanth_Co_-_Antha_Kaalam_1080P_mebtf1.mp4',
+  'https://res.cloudinary.com/dkc9ru68y/video/upload/v1778762712/Maggi_ready_family_jolly_Tamil_rfomjd.mp4',
+  'https://res.cloudinary.com/dkc9ru68y/video/upload/v1734679811/vidssave.com_MARLIA_ADS-_SATHYA_SAMY_ARUL___TVC___TAMIL___KAYADU_LOHAR_1080P_krg6mv.mp4'
 ];
 
-export default function VideoPlayer({ video, onClose, isTamilanPlanActive, onPlanActive }: VideoPlayerProps) {
+/**
+ * Shuffles an array of strings
+ */
+const shuffleArray = (array: string[]) => {
+  const newArray = [...array];
+  for (let i = newArray.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [newArray[i], newArray[j]] = [newArray[j], newArray[i]];
+  }
+  return newArray;
+};
+
+export default function VideoPlayer({ video, onClose, isTamilanPlanActive, onPlanActive, onNextVideo }: VideoPlayerProps) {
   const [isAdPlaying, setIsAdPlaying] = useState(true);
-  const [adQueue, setAdQueue] = useState<string[]>([MOCK_ADS[0]]);
+  const [adQueue, setAdQueue] = useState<string[]>([]);
   const [currentAdIndex, setCurrentAdIndex] = useState(0);
   const [isSeekingAds, setIsSeekingAds] = useState(false);
   const [adRemainingTime, setAdRemainingTime] = useState(0);
+  const [isAdMuted, setIsAdMuted] = useState(true);
   const [showSubscriptionModal, setShowSubscriptionModal] = useState(false);
+  const [comments, setComments] = useState<Comment[]>([]);
+  const [newComment, setNewComment] = useState('');
+  const [isPostingComment, setIsPostingComment] = useState(false);
   const [isLiked, setIsLiked] = useState(false);
   const [isDisliked, setIsDisliked] = useState(false);
   const [playedMidRolls, setPlayedMidRolls] = useState<number[]>([]);
@@ -38,32 +127,106 @@ export default function VideoPlayer({ video, onClose, isTamilanPlanActive, onPla
   const [isMuted, setIsMuted] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [showControls, setShowControls] = useState(true);
+  const [hoverTime, setHoverTime] = useState<number | null>(null);
+  const [hoverX, setHoverX] = useState(0);
+  
+  const [isDownloading, setIsDownloading] = useState(false);
+  const [isCasting, setIsCasting] = useState(false);
+  const [showCastModal, setShowCastModal] = useState(false);
+  const [castingDevice, setCastingDevice] = useState<string | null>(null);
   
   const containerRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const adVideoRef = useRef<HTMLVideoElement>(null);
+  const progressRef = useRef<HTMLDivElement>(null);
   const lastTimeRef = useRef(0);
   const ignoreNextSeekRef = useRef(false);
+
+  const [adPlayFailed, setAdPlayFailed] = useState(false);
 
   useEffect(() => {
     if (video) {
         setIsAdPlaying(!isTamilanPlanActive);
-        setAdQueue([MOCK_ADS[0]]);
+        // Shuffle the ads and pick one for pre-roll
+        const shuffled = shuffleArray(MOCK_ADS);
+        setAdQueue([shuffled[0]]);
         setCurrentAdIndex(0);
         setIsSeekingAds(false);
         setPlayedMidRolls([]);
         lastTimeRef.current = 0;
+        setAdPlayFailed(false);
+        setIsCasting(false);
+        setCastingDevice(null);
         window.scrollTo(0, 0);
+
+        // Fetch comments for this video
+        const q = query(
+          collection(db, 'comments'),
+          where('videoId', '==', video.id),
+          orderBy('createdAt', 'desc')
+        );
+
+        const unsubscribe = onSnapshot(q, (snapshot) => {
+          const commentsData = snapshot.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data()
+          })) as Comment[];
+          setComments(commentsData);
+        }, (error) => {
+          handleFirestoreError(error, OperationType.LIST, 'comments');
+        });
+
+        return () => unsubscribe();
     }
   }, [video, isTamilanPlanActive]);
 
+  useEffect(() => {
+    if (isAdPlaying && adVideoRef.current && adQueue[currentAdIndex]) {
+      adVideoRef.current.play().catch(err => {
+        console.warn("Ad autoplay blocked:", err);
+        setAdPlayFailed(true);
+      });
+    }
+  }, [isAdPlaying, currentAdIndex, adQueue]);
+
   if (!video) return null;
 
-  const handleDownload = () => {
+  const handleDownload = async () => {
+    if (!video) return;
+    
     if (!isTamilanPlanActive) {
       setShowSubscriptionModal(true);
     } else {
-      alert("Downloading video... (Tamilan Plan Active)");
+      if (isDownloading) return;
+      
+      setIsDownloading(true);
+      try {
+        // Try to fetch the video as a blob to force download
+        const response = await fetch(video.videoUrl);
+        if (!response.ok) throw new Error('Network response was not ok');
+        
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        // Clean up the title for filename
+        const fileName = video.title.replace(/[^a-z0-9]/gi, '_').toLowerCase() || 'video';
+        a.download = `${fileName}.mp4`;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+      } catch (error) {
+        console.error('Download failed:', error);
+        // Fallback: Try opening in a new tab if blob fetch fails (e.g. CORS)
+        const a = document.createElement('a');
+        a.href = video.videoUrl;
+        a.target = '_blank';
+        a.download = video.title;
+        a.click();
+      } finally {
+        setIsDownloading(false);
+      }
     }
   };
 
@@ -104,15 +267,118 @@ export default function VideoPlayer({ video, onClose, isTamilanPlanActive, onPla
     if (isLiked) setIsLiked(false);
   };
 
+  const handleCast = () => {
+    // Attempt to use native browser casting if available
+    const videoElement = videoRef.current;
+    if (videoElement && (videoElement as any).remote) {
+      (videoElement as any).remote.prompt().catch((err: any) => {
+        console.warn("Remote Playback failed or cancelled:", err);
+        setShowCastModal(true);
+      });
+    } else {
+      setShowCastModal(true);
+    }
+  };
+
+  const selectCastDevice = (device: string) => {
+    setIsCasting(true);
+    setCastingDevice(device);
+    setShowCastModal(false);
+    
+    // Auto-pause video locally when casting (simulating handoff)
+    if (isPlaying) {
+      togglePlay();
+    }
+  };
+
+  const stopCasting = () => {
+    setIsCasting(false);
+    setCastingDevice(null);
+  };
+
+  const handlePostComment = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newComment.trim() || !video || isPostingComment) return;
+
+    if (!auth.currentUser) {
+      try {
+        await signInWithGoogle();
+      } catch (err) {
+        return;
+      }
+    }
+
+    if (!auth.currentUser) return;
+
+    setIsPostingComment(true);
+    const path = 'comments';
+    try {
+      await addDoc(collection(db, path), {
+        videoId: video.id,
+        userId: auth.currentUser.uid,
+        userName: auth.currentUser.displayName || 'Anonymous User',
+        text: newComment.trim(),
+        createdAt: serverTimestamp(),
+        likes: 0
+      });
+      setNewComment('');
+    } catch (error) {
+      handleFirestoreError(error, OperationType.CREATE, path);
+    } finally {
+      setIsPostingComment(false);
+    }
+  };
+
+  const formatDistanceToNow = (timestamp: any) => {
+    if (!timestamp) return 'Just now';
+    const date = timestamp instanceof Timestamp ? timestamp.toDate() : new Date(timestamp);
+    const now = new Date();
+    const diff = Math.floor((now.getTime() - date.getTime()) / 1000);
+    
+    if (diff < 60) return 'just now';
+    if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+    if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+    return `${Math.floor(diff / 86400)}d ago`;
+  };
+
+  const startAds = (resumeTime: number, isSeeking: boolean = false) => {
+    if (isTamilanPlanActive || isAdPlaying) return;
+    
+    if (videoRef.current) {
+      videoRef.current.pause();
+      // Set the time we want to resume at after the ad
+      videoRef.current.currentTime = resumeTime;
+    }
+    setCurrentTime(resumeTime);
+    lastTimeRef.current = resumeTime;
+    ignoreNextSeekRef.current = true;
+    
+    // Shuffle all 3 ads if seeking, otherwise pick one random ad
+    const shuffled = shuffleArray(MOCK_ADS);
+    setAdQueue(isSeeking ? shuffled : [shuffled[0]]);
+    setCurrentAdIndex(0);
+    setIsAdPlaying(true);
+    setIsSeekingAds(isSeeking);
+  };
+
   const handleAdEnded = () => {
     if (currentAdIndex < adQueue.length - 1) {
       setCurrentAdIndex(prev => prev + 1);
+      setAdPlayFailed(false);
     } else {
       setIsAdPlaying(false);
       setIsSeekingAds(false);
+      setAdPlayFailed(false);
       setTimeout(() => {
         if (videoRef.current) {
-          videoRef.current.play();
+          videoRef.current.play().catch(err => {
+            console.warn("Autoplay after ad blocked:", err);
+            setIsPlaying(false);
+          });
+          // Reset the ignore flag after a short delay once playback has resumed
+          setTimeout(() => {
+            ignoreNextSeekRef.current = false;
+          }, 1000);
         }
       }, 100);
     }
@@ -120,50 +386,43 @@ export default function VideoPlayer({ video, onClose, isTamilanPlanActive, onPla
 
   const handleAdTimeUpdate = () => {
     if (adVideoRef.current) {
-      const remaining = Math.ceil(adVideoRef.current.duration - adVideoRef.current.currentTime);
-      setAdRemainingTime(remaining || 0);
+      const duration = adVideoRef.current.duration;
+      const currentTime = adVideoRef.current.currentTime;
+      if (!isNaN(duration) && !isNaN(currentTime)) {
+        const remaining = Math.ceil(duration - currentTime);
+        setAdRemainingTime(remaining >= 0 ? remaining : 0);
+      }
     }
   };
 
   const handleTimeUpdate = (e: React.SyntheticEvent<HTMLVideoElement>) => {
     const videoElement = e.currentTarget;
-    setCurrentTime(videoElement.currentTime);
+    const vTime = videoElement.currentTime;
+    
+    setCurrentTime(vTime);
     setDuration(videoElement.duration);
     
     if (isAdPlaying || isTamilanPlanActive) return;
     
-    const currentTime = videoElement.currentTime;
-    
-    // Mid-roll logic: Try to play an ad every 45 seconds of playback
-    const midRollInterval = 45;
-    const currentInterval = Math.floor(currentTime / midRollInterval);
-    
-    if (currentInterval > 0 && !playedMidRolls.includes(currentInterval)) {
-      videoElement.pause();
-      setPlayedMidRolls(prev => [...prev, currentInterval]);
-      
-      setAdQueue([MOCK_ADS[Math.floor(Math.random() * MOCK_ADS.length)]]);
-      setCurrentAdIndex(0);
-      setIsAdPlaying(true);
-      setIsSeekingAds(false);
-      return;
+    // Skip detection: Trigger ads if we've jumped forward significantly
+    // This catches jumps from external sources or if skip/progress somehow bypassed the explicit trigger
+    if (vTime - lastTimeRef.current > 1.2 && !ignoreNextSeekRef.current) {
+      startAds(vTime, true);
+    } else if (!ignoreNextSeekRef.current) {
+      // Normal playback or backward seek
+      lastTimeRef.current = vTime;
+    } else if (Math.abs(vTime - lastTimeRef.current) < 0.5) {
+      // We've successfully resumed at the target time, stop ignoring now
+      ignoreNextSeekRef.current = false;
     }
 
-    // Seek detection: Trigger ads on any forward seek
-    if (currentTime - lastTimeRef.current > 1.5 && !ignoreNextSeekRef.current) {
-      videoElement.pause();
-      const resumeTime = currentTime;
-      
-      setAdQueue(MOCK_ADS);
-      setCurrentAdIndex(0);
-      setIsAdPlaying(true);
-      setIsSeekingAds(true);
-      
-      ignoreNextSeekRef.current = true;
-      lastTimeRef.current = resumeTime;
-    } else {
-      lastTimeRef.current = currentTime;
-      ignoreNextSeekRef.current = false;
+    // Mid-roll logic: Try to play an ad every 60 seconds of continuous playback
+    const midRollInterval = 60;
+    const currentInterval = Math.floor(vTime / midRollInterval);
+    
+    if (currentInterval > 0 && !playedMidRolls.includes(currentInterval) && !ignoreNextSeekRef.current) {
+      setPlayedMidRolls(prev => [...prev, currentInterval]);
+      startAds(vTime, false);
     }
   };
 
@@ -179,17 +438,49 @@ export default function VideoPlayer({ video, onClose, isTamilanPlanActive, onPla
     }
   };
 
+  const handleProgressBarMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!progressRef.current || !duration || isAdPlaying) return;
+    
+    const rect = progressRef.current.getBoundingClientRect();
+    const x = Math.max(0, Math.min(e.clientX - rect.left, rect.width));
+    const percentage = x / rect.width;
+    const time = percentage * duration;
+    
+    setHoverTime(time);
+    setHoverX(x);
+  };
+
+  const handleProgressBarMouseLeave = () => {
+    setHoverTime(null);
+  };
+
   const skip = (seconds: number) => {
-    if (videoRef.current) {
-      videoRef.current.currentTime += seconds;
+    if (!videoRef.current || isAdPlaying) return;
+    const targetTime = Math.max(0, Math.min(videoRef.current.currentTime + seconds, duration));
+    
+    if (seconds > 0 && !isTamilanPlanActive) {
+      // Forward skip -> Trigger Ad
+      startAds(targetTime, true);
+    } else {
+      // Backward skip or Plan Active -> Just seek
+      videoRef.current.currentTime = targetTime;
+      setCurrentTime(targetTime);
+      lastTimeRef.current = targetTime;
     }
   };
 
   const handleProgressChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const time = parseFloat(e.target.value);
-    if (videoRef.current) {
-      videoRef.current.currentTime = time;
-      setCurrentTime(time);
+    if (!videoRef.current || isAdPlaying) return;
+    const targetTime = parseFloat(e.target.value);
+    
+    if (targetTime > videoRef.current.currentTime + 1.0 && !isTamilanPlanActive) {
+      // Forward seek through slider -> Trigger Ad
+      startAds(targetTime, true);
+    } else {
+      // Backward seek or Plan Active -> Just seek
+      videoRef.current.currentTime = targetTime;
+      setCurrentTime(targetTime);
+      lastTimeRef.current = targetTime;
     }
   };
 
@@ -231,6 +522,27 @@ export default function VideoPlayer({ video, onClose, isTamilanPlanActive, onPla
     return `${minutes}:${seconds < 10 ? '0' : ''}${seconds}`;
   };
 
+  const getEmbedUrl = (url: string) => {
+    let embedUrl = url;
+    if (url.includes('youtube.com/watch?v=')) {
+      const id = url.split('v=')[1]?.split('&')[0];
+      embedUrl = `https://www.youtube.com/embed/${id}`;
+    } else if (url.includes('youtu.be/')) {
+      const id = url.split('youtu.be/')[1]?.split('?')[0];
+      embedUrl = `https://www.youtube.com/embed/${id}`;
+    }
+    
+    // Add autoplay if not present
+    if (!embedUrl.includes('autoplay=')) {
+      embedUrl += (embedUrl.includes('?') ? '&' : '?') + 'autoplay=1';
+    }
+    return embedUrl;
+  };
+
+  const isDirectVideo = (url: string) => {
+    return url.match(/\.(mp4|webm|ogg|mp3|m4a|m4v|f4v|f4p|f4a|f4b)(\?.*)?$/i) !== null;
+  };
+
   return (
     <AnimatePresence>
       <motion.div
@@ -250,67 +562,106 @@ export default function VideoPlayer({ video, onClose, isTamilanPlanActive, onPla
             </button>
           </div>
 
-          <div className="w-full h-full relative" onMouseMove={() => {
-            setShowControls(true);
-            const timeout = setTimeout(() => {
-              if (isPlaying && !isAdPlaying) setShowControls(false);
-            }, 3000);
-            return () => clearTimeout(timeout);
-          }}>
-            {/* Background Thumbnail for continuity */}
-            <div 
-              className="absolute inset-0 z-0 opacity-40 blur-xl scale-110"
-              style={{ 
-                backgroundImage: `url(${video.thumbnail})`,
-                backgroundSize: 'cover',
-                backgroundPosition: 'center'
-              }}
-            />
+            <div className="w-full h-full relative" onMouseMove={() => {
+              setShowControls(true);
+              const timeout = setTimeout(() => {
+                if (isPlaying && !isAdPlaying) setShowControls(false);
+              }, 3000);
+              return () => clearTimeout(timeout);
+            }}>
+              {/* Background Thumbnail for continuity */}
+              <div 
+                className="absolute inset-0 z-0 opacity-40 blur-xl scale-110"
+                style={{ 
+                  backgroundImage: `url(${video.thumbnail})`,
+                  backgroundSize: 'cover',
+                  backgroundPosition: 'center'
+                }}
+              />
 
-            {isAdPlaying ? (
-              <div className="absolute inset-0 bg-black/40 z-10 flex items-center justify-center backdrop-blur-sm">
-                <video
-                  ref={adVideoRef}
-                  key={`ad-${currentAdIndex}`}
-                  autoPlay
-                  className="w-full h-full object-contain relative z-20 shadow-2xl"
-                  src={adQueue[currentAdIndex]}
-                  onEnded={handleAdEnded}
-                  onTimeUpdate={handleAdTimeUpdate}
-                />
-                
-                {/* Dynamic Ad Timer Overlay - Pill style with blue theme */}
-                <motion.div 
-                  initial={{ opacity: 0, x: 20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  className="absolute top-4 right-4 z-30"
-                >
-                  <div className="bg-blue-900/40 backdrop-blur-2xl px-6 py-2 rounded-full border border-blue-400/20 shadow-[0_8px_32px_rgba(0,0,0,0.4)] flex items-center gap-2">
-                    <div className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse" />
-                    <span className="text-white font-black text-sm md:text-base tracking-tight whitespace-nowrap">
-                      Ad {currentAdIndex + 1}/{adQueue.length} • Ends in {adRemainingTime}s
-                    </span>
+              {isAdPlaying ? (
+                <div className="absolute inset-0 bg-black/40 z-10 flex items-center justify-center backdrop-blur-sm group/ad">
+                  <video
+                    ref={adVideoRef}
+                    key={`ad-${currentAdIndex}`}
+                    autoPlay
+                    playsInline
+                    muted={isAdMuted}
+                    className="w-full h-full object-contain relative z-20 shadow-2xl"
+                    src={adQueue[currentAdIndex]}
+                    onEnded={handleAdEnded}
+                    onTimeUpdate={handleAdTimeUpdate}
+                    onError={(e) => {
+                      console.error("Ad failed to load, skipping:", adQueue[currentAdIndex]);
+                      handleAdEnded();
+                    }}
+                    onClick={(e) => {
+                      const video = e.currentTarget;
+                      if (video.paused) video.play();
+                      setIsAdMuted(!isAdMuted);
+                    }}
+                  />
+                  
+                  {/* Ad Play/Unmute Overlay */}
+                  <div className={`absolute inset-0 z-30 flex flex-col items-center justify-center pointer-events-none transition-opacity ${adPlayFailed ? 'opacity-100' : 'opacity-0 group-hover/ad:opacity-100'}`}>
+                    <div className="bg-black/60 p-6 rounded-full backdrop-blur-md border border-white/20 pointer-events-auto cursor-pointer" onClick={() => {
+                      if (adVideoRef.current) {
+                        adVideoRef.current.play();
+                        setAdPlayFailed(false);
+                      }
+                      setIsAdMuted(false);
+                    }}>
+                      {isAdMuted ? <VolumeX className="w-12 h-12 text-white" /> : <Play className="w-12 h-12 text-white fill-white" />}
+                    </div>
+                    <p className="text-white mt-4 font-bold text-sm bg-black/40 px-4 py-1 rounded-full">
+                      {adPlayFailed ? 'Autoplay Blocked - Tap to Play Ad' : (isAdMuted ? 'Tap to Unmute Ad' : 'Ad Playing')}
+                    </p>
                   </div>
-                </motion.div>
-              </div>
-            ) : null}
+                  
+                  {/* Dynamic Ad Timer Overlay - Pill style with blue theme */}
+                  <motion.div 
+                    initial={{ opacity: 0, x: 20 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    className="absolute top-4 right-4 z-30"
+                  >
+                    <div className="bg-blue-900/40 backdrop-blur-2xl px-6 py-2 rounded-full border border-blue-400/20 shadow-[0_8px_32px_rgba(0,0,0,0.4)] flex items-center gap-2">
+                      <div className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse" />
+                      <span className="text-white font-black text-sm md:text-base tracking-tight whitespace-nowrap">
+                        Ad {currentAdIndex + 1}/{adQueue.length} • Ends in {adRemainingTime}s
+                      </span>
+                    </div>
+                  </motion.div>
+                </div>
+              ) : null}
 
-            <video
-              ref={videoRef}
-              autoPlay={false}
-              controls={false}
-              className={`w-full h-full object-contain ${isAdPlaying ? 'hidden' : ''}`}
-              src={video.videoUrl}
-              onTimeUpdate={handleTimeUpdate}
-              onPlay={() => setIsPlaying(true)}
-              onPause={() => setIsPlaying(false)}
-              onLoadedMetadata={(e) => setDuration(e.currentTarget.duration)}
-              poster={video.thumbnail}
-              onClick={togglePlay}
-            />
+              {!isAdPlaying && !isDirectVideo(video.videoUrl) && (
+                <iframe
+                  src={getEmbedUrl(video.videoUrl)}
+                  className="w-full h-full border-none"
+                  allowFullScreen
+                  allow="autoplay; encrypted-media; picture-in-picture"
+                />
+              )}
 
-            {/* Custom Controls Overlay */}
-            {!isAdPlaying && (
+              {isDirectVideo(video.videoUrl) && (
+                <video
+                  ref={videoRef}
+                  autoPlay={false}
+                  controls={false}
+                  playsInline
+                  className={`w-full h-full object-contain ${isAdPlaying ? 'hidden' : ''}`}
+                  src={video.videoUrl}
+                  onTimeUpdate={handleTimeUpdate}
+                  onPlay={() => setIsPlaying(true)}
+                  onPause={() => setIsPlaying(false)}
+                  onLoadedMetadata={(e) => setDuration(e.currentTarget.duration)}
+                  poster={video.thumbnail}
+                  onClick={togglePlay}
+                />
+              )}
+
+              {/* Custom Controls Overlay - Only show for direct video files */}
+              {!isAdPlaying && isDirectVideo(video.videoUrl) && (
               <div className={`absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/40 flex flex-col justify-between transition-opacity duration-300 ${showControls || !isPlaying ? 'opacity-100' : 'opacity-0'}`}>
                 {/* Center Play Button */}
                 <div className="flex-1 flex items-center justify-center">
@@ -320,14 +671,29 @@ export default function VideoPlayer({ video, onClose, isTamilanPlanActive, onPla
                     onClick={togglePlay}
                     className="w-20 h-20 bg-white/20 backdrop-blur-md rounded-full flex items-center justify-center text-white border border-white/20 shadow-2xl transition-all hover:bg-white/30"
                   >
-                    {isPlaying ? <Pause className="w-10 h-10" /> : <Play className="w-10 h-10 ml-1" />}
+                    <AnimatePresence mode="wait">
+                      <motion.div
+                        key={isPlaying ? 'pause' : 'play'}
+                        initial={{ opacity: 0, scale: 0.5, rotate: -45 }}
+                        animate={{ opacity: 1, scale: 1, rotate: 0 }}
+                        exit={{ opacity: 0, scale: 0.5, rotate: 45 }}
+                        transition={{ duration: 0.2 }}
+                      >
+                        {isPlaying ? <Pause className="w-10 h-10" /> : <Play className="w-10 h-10 ml-1 fill-white" />}
+                      </motion.div>
+                    </AnimatePresence>
                   </motion.button>
                 </div>
 
                 {/* Bottom Controls */}
                 <div className="p-4 md:p-6 flex flex-col gap-2">
                   {/* Progress Bar */}
-                  <div className="relative group/progress h-1 flex items-center mb-4">
+                  <div 
+                    ref={progressRef}
+                    className="relative group/progress h-2 flex items-center mb-6"
+                    onMouseMove={handleProgressBarMouseMove}
+                    onMouseLeave={handleProgressBarMouseLeave}
+                  >
                     <input
                       type="range"
                       min={0}
@@ -337,20 +703,42 @@ export default function VideoPlayer({ video, onClose, isTamilanPlanActive, onPla
                       onChange={handleProgressChange}
                       className="absolute inset-0 w-full opacity-0 z-20 cursor-pointer"
                     />
-                    <div className="absolute inset-0 w-full h-1 bg-white/20 rounded-full overflow-hidden">
+                    <div className="absolute inset-x-0 h-1 bg-white/20 rounded-full overflow-hidden transition-all group-hover/progress:h-1.5">
+                      {/* Hover Preview Bar */}
+                      {hoverTime !== null && (
+                        <div 
+                          className="absolute inset-y-0 bg-white/20 z-0"
+                          style={{ width: `${(hoverTime / duration) * 100}%` }}
+                        />
+                      )}
                       <div 
-                        className="h-full bg-brand-primary" 
+                        className="h-full bg-brand-primary relative z-10" 
                         style={{ width: `${(currentTime / duration) * 100}%` }}
                       ></div>
                     </div>
                     {/* Thumb handle */}
                     <div 
-                      className="absolute top-1/2 -translate-y-1/2 w-4 h-4 bg-white rounded-full shadow-lg border-2 border-brand-primary z-10 transition-transform scale-0 group-hover/progress:scale-100 pointer-events-none"
-                      style={{ left: `${(currentTime / duration) * 100}%`, transform: `translate(-50%, -50%) scale(${showControls ? 1 : 0})` }}
+                      className="absolute top-1/2 -translate-y-1/2 w-4 h-4 bg-white rounded-full shadow-lg border-2 border-brand-primary z-30 transition-transform scale-0 group-hover/progress:scale-100 pointer-events-none"
+                      style={{ left: `${(currentTime / duration) * 100}%` }}
                     />
                     
-                    {/* Time Tooltip */}
-                    <div className="flex justify-between w-full text-[10px] sm:text-xs font-mono text-white/70 mt-4 absolute top-0">
+                    {/* Timestamp Tooltip */}
+                    <AnimatePresence>
+                      {hoverTime !== null && (
+                        <motion.div 
+                          initial={{ opacity: 0, y: 10, scale: 0.9 }}
+                          animate={{ opacity: 1, y: 0, scale: 1 }}
+                          exit={{ opacity: 0, y: 10, scale: 0.9 }}
+                          className="absolute bottom-6 bg-black/80 backdrop-blur-md text-white text-xs font-mono px-2 py-1 rounded-md border border-white/10 z-40 whitespace-nowrap pointer-events-none shadow-xl"
+                          style={{ left: hoverX, transform: 'translateX(-50%)' }}
+                        >
+                          {formatTime(hoverTime)}
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+
+                    {/* Time Display Below */}
+                    <div className="flex justify-between w-full text-[10px] sm:text-xs font-mono text-white/70 mt-6 absolute top-0">
                       <span>{formatTime(currentTime)}</span>
                       <span>{formatTime(duration)}</span>
                     </div>
@@ -385,10 +773,21 @@ export default function VideoPlayer({ video, onClose, isTamilanPlanActive, onPla
                         <button onClick={() => skip(10)} className="text-white hover:text-brand-primary transition-colors p-1">
                           <SkipForward className="w-6 h-6" />
                         </button>
+                        <button onClick={onNextVideo} title="Next Video" className="text-white hover:text-brand-primary transition-colors p-1 ml-2">
+                          <SkipForward className="w-6 h-6 fill-white" />
+                        </button>
                       </div>
                     </div>
 
                     <div className="flex items-center gap-6">
+                      <button 
+                        onClick={handleCast}
+                        className={`${isCasting ? 'text-brand-primary animate-pulse' : 'text-white hover:text-brand-primary'} transition-colors p-1 relative`}
+                        title={isCasting ? `Casting to ${castingDevice}` : "Cast to TV"}
+                      >
+                        <Cast className="w-5 h-5" />
+                        {isCasting && <div className="absolute top-0 right-0 w-1.5 h-1.5 bg-brand-primary rounded-full shadow-[0_0_8px_rgba(255,107,0,0.8)]" />}
+                      </button>
                       <button className="text-white hover:text-brand-primary transition-colors p-1">
                         <Settings className="w-5 h-5" />
                       </button>
@@ -401,6 +800,96 @@ export default function VideoPlayer({ video, onClose, isTamilanPlanActive, onPla
                     </div>
                   </div>
                 </div>
+
+                {/* Casting UI Overlay */}
+                <AnimatePresence>
+                  {isCasting && (
+                    <motion.div 
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      exit={{ opacity: 0 }}
+                      className="absolute inset-0 z-50 bg-black flex flex-col items-center justify-center gap-6"
+                    >
+                      <div className="relative">
+                        <Cast className="w-20 h-20 text-brand-primary animate-pulse" />
+                        <div className="absolute inset-0 animate-ping bg-brand-primary/20 rounded-full scale-150" />
+                      </div>
+                      <div className="text-center">
+                        <h3 className="text-2xl font-black tracking-tight text-white mb-2">Casting to {castingDevice}</h3>
+                        <p className="text-gray-400 text-sm">Controlling via this device</p>
+                      </div>
+                      <button 
+                        onClick={stopCasting}
+                        className="mt-4 px-8 py-3 bg-red-600 hover:bg-red-700 text-white rounded-full font-bold text-sm transition-all shadow-xl"
+                      >
+                        Stop Casting
+                      </button>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+
+                {/* Cast Device Picker */}
+                <AnimatePresence>
+                  {showCastModal && (
+                    <div className="absolute inset-0 z-[60] flex items-center justify-center p-4">
+                      <motion.div 
+                        initial={{ opacity: 0, scale: 0.9, y: 20 }}
+                        animate={{ opacity: 1, scale: 1, y: 0 }}
+                        exit={{ opacity: 0, scale: 0.9, y: 20 }}
+                        className="bg-black/95 backdrop-blur-2xl border border-white/10 w-full max-w-sm rounded-3xl p-8 shadow-2xl relative overflow-hidden"
+                      >
+                         <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-brand-primary to-transparent" />
+                         
+                         <button 
+                           onClick={() => setShowCastModal(false)}
+                           className="absolute top-4 right-4 text-gray-500 hover:text-white transition-colors"
+                         >
+                           <X className="w-6 h-6" />
+                         </button>
+
+                         <div className="flex flex-col items-center gap-4 mb-8">
+                           <div className="p-4 bg-brand-primary/10 rounded-2xl">
+                             <Cast className="w-10 h-10 text-brand-primary" />
+                           </div>
+                           <h3 className="text-xl font-black text-white">Cast to device</h3>
+                         </div>
+
+                         <div className="flex flex-col gap-3">
+                           {[
+                             { name: 'Living Room TV', id: 'lr-tv' },
+                             { name: 'Bedroom Chromecast', id: 'br-cc' },
+                             { name: 'Kitchen Smart Display', id: 'ksd' }
+                           ].map((device) => (
+                             <button
+                               key={device.id}
+                               onClick={() => selectCastDevice(device.name)}
+                               className="flex items-center gap-4 p-4 rounded-2xl bg-white/5 hover:bg-white/10 border border-transparent hover:border-white/10 transition-all group text-left"
+                             >
+                               <div className="w-10 h-10 rounded-full bg-gray-800 flex items-center justify-center group-hover:scale-110 transition-transform">
+                                  <Info className="w-5 h-5 text-gray-500" />
+                               </div>
+                               <div>
+                                 <p className="font-bold text-white text-sm">{device.name}</p>
+                                 <p className="text-[10px] text-gray-400 font-mono">Available on network</p>
+                               </div>
+                             </button>
+                           ))}
+                         </div>
+                         
+                         <div className="mt-8 flex justify-center">
+                           <div className="flex items-center gap-2 text-[10px] text-gray-500 font-medium">
+                             <div className="w-2 h-2 bg-brand-primary rounded-full animate-pulse" />
+                             Searching for nearby devices...
+                           </div>
+                         </div>
+                      </motion.div>
+                      <div 
+                        className="absolute inset-0 bg-black/40 backdrop-blur-sm -z-10" 
+                        onClick={() => setShowCastModal(false)} 
+                      />
+                    </div>
+                  )}
+                </AnimatePresence>
               </div>
             )}
           </div>
@@ -441,14 +930,31 @@ export default function VideoPlayer({ video, onClose, isTamilanPlanActive, onPla
 
               <button 
                 onClick={handleDownload}
-                className={`flex items-center gap-2 px-4 py-2 rounded-full font-bold text-sm transition-all shrink-0 ${isTamilanPlanActive ? 'bg-brand-primary text-white' : 'bg-white/10 hover:bg-white/20'}`}
+                disabled={isDownloading}
+                className={`flex items-center gap-2 px-4 py-2 rounded-full font-bold text-sm transition-all shrink-0 ${isTamilanPlanActive ? 'bg-brand-primary text-white' : 'bg-white/10 hover:bg-white/20'} ${isDownloading ? 'opacity-50 cursor-wait' : ''}`}
               >
-                <Download className="w-4 h-4" /> 
-                {isTamilanPlanActive ? 'Download Ready' : 'Download'}
+                {isDownloading ? (
+                   <>
+                     <div className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                     <span>Downloading...</span>
+                   </>
+                ) : (
+                  <>
+                    <Download className="w-4 h-4" /> 
+                    {isTamilanPlanActive ? 'Download Ready' : 'Download'}
+                  </>
+                )}
               </button>
               
               <button className="p-2 bg-white/10 hover:bg-white/20 rounded-full transition-colors shrink-0">
                 <MoreHorizontal className="w-5 h-5" />
+              </button>
+
+              <button 
+                onClick={onNextVideo}
+                className="flex items-center gap-2 px-6 py-2 bg-brand-primary text-white rounded-full font-bold text-sm transition-all shadow-lg shadow-brand-primary/20 hover:scale-105 active:scale-95 ml-auto"
+              >
+                Next Video <SkipForward className="w-4 h-4 text-white" />
               </button>
             </div>
           </div>
@@ -466,46 +972,61 @@ export default function VideoPlayer({ video, onClose, isTamilanPlanActive, onPla
           {/* User Comments Section Priority */}
           <div className="mt-6 flex flex-col gap-6">
             <div className="flex items-center justify-between border-b border-white/10 pb-4">
-              <h3 className="text-xl font-black tracking-tight">Comments <span className="text-gray-500 font-bold ml-2">1.2K</span></h3>
+              <h3 className="text-xl font-black tracking-tight">Comments <span className="text-gray-500 font-bold ml-2">{comments.length}</span></h3>
               <MoreHorizontal className="w-5 h-5 text-gray-400" />
             </div>
             
-            <div className="flex items-center gap-4 mb-4">
-              <div className="w-10 h-10 rounded-full bg-brand-primary flex items-center justify-center font-bold text-sm">D</div>
+            <form onSubmit={handlePostComment} className="flex items-center gap-4 mb-4">
+              <div className="w-10 h-10 rounded-full bg-brand-primary flex items-center justify-center font-bold text-sm">
+                {auth.currentUser?.displayName?.charAt(0) || 'D'}
+              </div>
               <input 
                 type="text" 
+                value={newComment}
+                onChange={(e) => setNewComment(e.target.value)}
                 placeholder="Add a comment..." 
-                className="flex-1 bg-transparent border-b border-white/10 py-2 text-sm focus:border-white focus:outline-none transition-colors"
+                disabled={isPostingComment}
+                className="flex-1 bg-transparent border-b border-white/10 py-2 text-sm focus:border-white focus:outline-none transition-colors disabled:opacity-50"
               />
-            </div>
+              {newComment.trim() && (
+                <button 
+                  type="submit"
+                  disabled={isPostingComment}
+                  className="bg-brand-primary text-white font-bold text-xs px-4 py-2 rounded-full hover:bg-brand-primary/80 transition-colors disabled:opacity-50"
+                >
+                  Comment
+                </button>
+              )}
+            </form>
 
-            <div className="flex flex-col gap-8">
-              {[
-                { user: 'Sathish Kumar', text: 'Amazing cinematography! The colors are just perfect.', time: '2 hours ago', likes: '1.2K' },
-                { user: 'Priya Dev', text: 'Vaagai contents are always top notch. Keep it up!', time: '5 hours ago', likes: '850' },
-                { user: 'Arun V', text: 'Tamil cinema is reaching new heights with these visuals.', time: '1 day ago', likes: '2.3K' }
-              ].map((comment, i) => (
-                <div key={i} className="flex gap-4">
+            <div className="flex flex-col gap-8 pb-20">
+              {comments.length > 0 ? comments.map((comment) => (
+                <div key={comment.id} className="flex gap-4">
                   <div className="w-10 h-10 rounded-full bg-gray-800 shrink-0 uppercase flex items-center justify-center font-bold text-xs">
-                    {comment.user.charAt(0)}
+                    {comment.userName.charAt(0)}
                   </div>
                   <div className="flex flex-col gap-1">
                     <div className="flex items-center gap-2">
-                       <span className="text-sm font-bold">{comment.user}</span>
-                       <span className="text-[10px] text-gray-500">{comment.time}</span>
+                       <span className="text-sm font-bold">{comment.userName}</span>
+                       <span className="text-[10px] text-gray-500">{formatDistanceToNow(comment.createdAt)}</span>
                     </div>
                     <p className="text-sm text-gray-200 leading-normal">{comment.text}</p>
                     <div className="flex items-center gap-4 mt-1">
                       <div className="flex items-center gap-1">
-                        <ThumbsUp className="w-3 h-3 text-gray-400" />
-                        <span className="text-[10px] text-gray-400">{comment.likes}</span>
+                        <ThumbsUp className="w-3 h-3 text-gray-400 cursor-pointer hover:text-brand-primary" />
+                        <span className="text-[10px] text-gray-400">{comment.likes || 0}</span>
                       </div>
-                      <ThumbsDown className="w-3 h-3 text-gray-400" />
-                      <span className="text-[10px] font-bold text-gray-400">Reply</span>
+                      <ThumbsDown className="w-3 h-3 text-gray-400 cursor-pointer hover:text-red-500" />
+                      <span className="text-[10px] font-bold text-gray-400 cursor-pointer hover:text-white">Reply</span>
                     </div>
                   </div>
                 </div>
-              ))}
+              )) : (
+                <div className="text-center py-10 text-gray-500">
+                  <MessageSquare className="w-10 h-10 mx-auto mb-2 opacity-20" />
+                  <p className="text-sm font-medium">No comments yet. Be the first to comment!</p>
+                </div>
+              )}
             </div>
           </div>
         </div>
