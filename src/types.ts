@@ -21,3 +21,11 @@ export interface Category {
   title: string;
   videos: Video[];
 }
+
+export interface UserProfile {
+  uid: string;
+  nickname: string;
+  avatarUrl: string;
+  createdAt: string;
+  updatedAt?: string;
+}

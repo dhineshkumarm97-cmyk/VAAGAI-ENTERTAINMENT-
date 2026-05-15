@@ -8,177 +8,277 @@ import Navbar from './components/Navbar';
 import SplashScreen from './components/SplashScreen';
 import LanguageSelector from './components/LanguageSelector';
 import VideoPlayer from './components/VideoPlayer';
-import { Home, Compass, PlaySquare, MoreVertical } from 'lucide-react';
-import { Video } from './types';
+import Login from './components/Login';
+import UserProfileSetup from './components/UserProfileSetup';
+import BottomNav from './components/BottomNav';
+import MySpace from './components/MySpace';
+import ProfileSelection from './components/ProfileSelection';
+import { auth, db } from './lib/firebase';
+import { onAuthStateChanged, User } from 'firebase/auth';
+import { doc, getDoc } from 'firebase/firestore';
+import { Home, Compass, PlaySquare, MoreVertical, LogOut } from 'lucide-react';
+import { Video, UserProfile } from './types';
 
 const MOCK_VIDEOS: Video[] = [
   {
-    id: '1',
-    title: 'MURUGAN SOUTH INDIA DEVOTIONAL - OFFICIAL VIDEO',
-    description: 'Experience the divine presence with this soul-stirring devotional video. Dedicated to Lord Murugan, capturing the essence of South Indian spiritual heritage and culture.',
-    thumbnail: 'https://res.cloudinary.com/dkc9ru68y/image/upload/v1778682585/Picsart_26-05-13_06-45-33-442_t7kmaw.png',
-    videoUrl: 'https://res.cloudinary.com/dkc9ru68y/video/upload/v1778682664/AQPljtACF3Gie1XyO9z11wAoJdIkB2FXfDZnvHKfJth_Br4-NDdBD3cgecUHH06IrQIFLRWUt9p5woPAtdqR38_X_sttldo.mp4',
+    id: 'vid-1',
+    title: 'Vaagai Official Trailer',
+    description: 'The official trailer for our upcoming grand release. Experience the magic of Tamil cinema like never before.',
+    thumbnail: 'https://images.unsplash.com/photo-1536440136628-849c177e76a1?q=80&w=1925&auto=format&fit=crop',
+    videoUrl: 'https://drive.google.com/file/d/1TJakoWL-PP4ZJw_mrFBcYgN34QSzcwB_/view',
+    category: 'New',
+    year: '2026',
+    duration: '02:30',
+    rating: 'U',
+    views: '25K',
+    uploadedAt: 'Today',
+    channelName: 'Vaagai Media',
+    channelAvatar: 'https://res.cloudinary.com/dkc9ru68y/image/upload/v1778809504/Lion-icon_cxqtdq.png',
+    subscribers: '1M',
+    language: 'tamil'
+  },
+  {
+    id: 'vid-2',
+    title: 'Vaagai Special Content',
+    description: 'Special additional content for our community.',
+    thumbnail: 'https://images.unsplash.com/photo-1598897349489-02f20ebee3d4?q=80&w=2070&auto=format&fit=crop',
+    videoUrl: 'https://drive.google.com/file/d/1-dc6kxO4XTq9UL-Tvk2JSUuDT4lRGUT5/view',
+    category: 'New',
+    year: '2026',
+    duration: '03:15',
+    rating: 'U',
+    views: '10K',
+    uploadedAt: 'Recent',
+    channelName: 'Vaagai Media',
+    channelAvatar: 'https://res.cloudinary.com/dkc9ru68y/image/upload/v1778809504/Lion-icon_cxqtdq.png',
+    subscribers: '1M',
+    language: 'tamil'
+  },
+  {
+    id: 'vid-3',
+    title: 'Vaagai Premium Clip',
+    description: 'Exclusive community video for our Tamilan fans.',
+    thumbnail: 'https://images.unsplash.com/photo-1574629810360-7efbbe195018?q=80&w=2076&auto=format&fit=crop',
+    videoUrl: 'https://drive.google.com/file/d/1TJakoWL-PP4ZJw_mrFBcYgN34QSzcwB_/view',
+    category: 'Premium',
+    year: '2026',
+    duration: '02:45',
+    rating: 'U',
+    views: '5K',
+    uploadedAt: 'Just now',
+    channelName: 'Vaagai Media',
+    channelAvatar: 'https://res.cloudinary.com/dkc9ru68y/image/upload/v1778809504/Lion-icon_cxqtdq.png',
+    subscribers: '1M',
+    language: 'tamil'
+  },
+  {
+    id: 'vid-4',
+    title: 'Behind the Scenes: Vaagai',
+    description: 'See what goes on behind the cameras of our biggest productions.',
+    thumbnail: 'https://images.unsplash.com/photo-1485846234645-a62644f84728?q=80&w=2059&auto=format&fit=crop',
+    videoUrl: 'https://drive.google.com/file/d/1-dc6kxO4XTq9UL-Tvk2JSUuDT4lRGUT5/view',
     category: 'Trending',
-    year: '2024',
-    duration: '12:45',
-    rating: 'UA',
-    views: '1.2M',
+    year: '2026',
+    duration: '12:20',
+    rating: 'U/A',
+    views: '15K',
     uploadedAt: '2 days ago',
     channelName: 'Vaagai Media',
-    channelAvatar: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?q=80&w=100',
-    subscribers: '5.2M',
+    channelAvatar: 'https://res.cloudinary.com/dkc9ru68y/image/upload/v1778809504/Lion-icon_cxqtdq.png',
+    subscribers: '1M',
     language: 'tamil'
-  },
-  {
-    id: '4',
-    title: 'Malayalam Nature Documentary: Western Ghats',
-    description: 'Deep dive into the biodiversity of the magical Western Ghats.',
-    thumbnail: 'https://images.unsplash.com/photo-1582510003544-4d00b7f74220?q=80&w=2070&auto=format&fit=crop',
-    videoUrl: 'https://res.cloudinary.com/dkc9ru68y/video/upload/v1778682664/AQPljtACF3Gie1XyO9z11wAoJdIkB2FXfDZnvHKfJth_Br4-NDdBD3cgecUHH06IrQIFLRWUt9p5woPAtdqR38_X_sttldo.mp4',
-    category: 'Nature',
-    year: '2024',
-    duration: '18:50',
-    rating: 'UA',
-    views: '1.5M',
-    uploadedAt: '3 days ago',
-    channelName: 'Kerala Wild',
-    channelAvatar: 'https://images.unsplash.com/photo-1582510003544-4d00b7f74220?q=100&w=100',
-    subscribers: '2.1M',
-    language: 'malayalam'
-  },
-  {
-    id: '5',
-    title: 'Bengali Sweets: A Culinary Journey',
-    description: 'Discover the secrets behind the most famous sweets from West Bengal.',
-    thumbnail: 'https://images.unsplash.com/photo-1589113735053-06692db20005?q=80&w=2070&auto=format&fit=crop',
-    videoUrl: 'https://res.cloudinary.com/dkc9ru68y/video/upload/v1778682664/AQPljtACF3Gie1XyO9z11wAoJdIkB2FXfDZnvHKfJth_Br4-NDdBD3cgecUHH06IrQIFLRWUt9p5woPAtdqR38_X_sttldo.mp4',
-    category: 'Food',
-    year: '2024',
-    duration: '14:20',
-    rating: 'UA',
-    views: '450K',
-    uploadedAt: '5 days ago',
-    channelName: 'Bengal Bites',
-    channelAvatar: 'https://images.unsplash.com/photo-1589113735053-06692db20005?q=100&w=100',
-    subscribers: '120K',
-    language: 'bengali'
-  },
-  {
-    id: '6',
-    title: 'Punjabi Folk Music - Virsa',
-    description: 'Soulful Punjabi folk music that connects you to the roots of Punjab.',
-    thumbnail: 'https://images.unsplash.com/photo-1593693400551-744385a448fc?q=80&w=2070&auto=format&fit=crop',
-    videoUrl: 'https://res.cloudinary.com/dkc9ru68y/video/upload/v1778682664/AQPljtACF3Gie1XyO9z11wAoJdIkB2FXfDZnvHKfJth_Br4-NDdBD3cgecUHH06IrQIFLRWUt9p5woPAtdqR38_X_sttldo.mp4',
-    category: 'Music',
-    year: '2024',
-    duration: '10:05',
-    rating: 'UA',
-    views: '2.1M',
-    uploadedAt: '2 weeks ago',
-    channelName: 'Punjab Beats',
-    channelAvatar: 'https://images.unsplash.com/photo-1593693400551-744385a448fc?q=100&w=100',
-    subscribers: '3.4M',
-    language: 'punjabi'
-  },
-  {
-    id: '7',
-    title: 'Marathi Killa Exploration: Raigad',
-    description: 'History and architectural marvels of the Raigad Fort.',
-    thumbnail: 'https://images.unsplash.com/photo-1551009175-15bdf9dcb580?q=80&w=2070&auto=format&fit=crop',
-    videoUrl: 'https://res.cloudinary.com/dkc9ru68y/video/upload/v1778682664/AQPljtACF3Gie1XyO9z11wAoJdIkB2FXfDZnvHKfJth_Br4-NDdBD3cgecUHH06IrQIFLRWUt9p5woPAtdqR38_X_sttldo.mp4',
-    category: 'History',
-    year: '2023',
-    duration: '22:15',
-    rating: 'UA',
-    views: '780K',
-    uploadedAt: '1 month ago',
-    channelName: 'Marathi Heritage',
-    channelAvatar: 'https://images.unsplash.com/photo-1551009175-15bdf9dcb580?q=100&w=100',
-    subscribers: '560K',
-    language: 'marathi'
-  },
-  {
-    id: '8',
-    title: 'Love Insurance Kompany (2026) - Official Stream',
-    description: 'Love Insurance Kompany (LIK) is an upcoming Indian Tamil-language science fiction romantic comedy film written and directed by Vignesh Shivan. It features Pradeep Ranganathan, Krithi Shetty and S. J. Suryah in the lead roles.',
-    thumbnail: 'https://images.unsplash.com/photo-1536440136628-849c177e76a1?q=80&w=2025&auto=format&fit=crop',
-    videoUrl: 'https://www.youtube.com/watch?v=6P1wA6a7yIs',
-    category: 'Movies',
-    year: '2026',
-    duration: '02:45:00',
-    rating: 'UA',
-    views: '5.6M',
-    uploadedAt: 'Today',
-    channelName: 'Vignesh Shivan Films',
-    channelAvatar: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?q=80&w=100',
-    subscribers: '1.2M',
-    language: 'tamil'
-  },
-  {
-    id: '9',
-    title: 'New Tamil Movie Trailer',
-    description: 'Check out the official teaser/trailer of this highly anticipated upcoming Tamil film.',
-    thumbnail: 'https://images.unsplash.com/photo-1485846234645-a62644f84728?q=80&w=2059&auto=format&fit=crop',
-    videoUrl: 'https://www.youtube.com/watch?v=pIm6Ld-JNqw',
-    category: 'Trailers',
-    year: '2024',
-    duration: '02:18',
-    rating: 'UA',
-    views: '2.3M',
-    uploadedAt: '1 day ago',
-    channelName: 'Tamil Cinema Hub',
-    channelAvatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?q=80&w=100',
-    subscribers: '890K',
-    language: 'tamil'
-  },
-  {
-    id: '10',
-    title: 'OneStream Live Stream',
-    description: 'Special live stream event on OneStream platform.',
-    thumbnail: 'https://images.unsplash.com/photo-1516035069371-29a1b244cc32?q=80&w=1000&auto=format&fit=crop',
-    videoUrl: 'https://play.onestream.today/stream/page/98555',
-    category: 'Live',
-    year: '2024',
-    duration: 'Live',
-    rating: 'UA',
-    views: '150K',
-    uploadedAt: 'Live Now',
-    channelName: 'OneStream Live',
-    channelAvatar: 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?q=80&w=100',
-    subscribers: '300K',
-    language: 'english'
   }
 ];
 
 export default function App() {
-  const [appState, setAppState] = useState<'splash' | 'language' | 'main'>('splash');
+  const [appState, setAppState] = useState<'splash' | 'login' | 'profile_setup' | 'language' | 'profile_selection' | 'main'>('splash');
+  const [activeTab, setActiveTab] = useState<'home' | 'search' | 'myspace'>('home');
+  const [user, setUser] = useState<User | null>(null);
+  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [selectedLanguage, setSelectedLanguage] = useState<string | null>(null);
   const [selectedVideo, setSelectedVideo] = useState<Video | null>(null);
   const [isTamilanPlanActive, setIsTamilanPlanActive] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
 
   useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+      setUser(currentUser);
+      
+      if (!currentUser) {
+        setUserProfile(null);
+        if (appState !== 'splash') {
+          setAppState('login');
+        }
+      }
+    });
+
     const savedLanguage = localStorage.getItem('vaagai_language');
     if (savedLanguage) {
       setSelectedLanguage(savedLanguage);
     }
-  }, []);
+
+    return () => unsubscribe();
+  }, []); // Run once on mount
+
+  // Handle auto-navigation when user is logged in and at login state
+  useEffect(() => {
+    if (user && appState === 'login') {
+      handlePostLoginNavigation(user);
+    }
+  }, [user, appState]);
+
+  const handlePostLoginNavigation = async (currentUser?: User | null) => {
+    const activeUser = currentUser || auth.currentUser;
+    if (!activeUser) {
+      setAppState('login');
+      return;
+    }
+
+    try {
+      const savedLanguage = localStorage.getItem('vaagai_language');
+      if (!savedLanguage) {
+        setAppState('language');
+        return;
+      }
+
+      setSelectedLanguage(savedLanguage);
+
+      // Check if user has a profile
+      const userDoc = await getDoc(doc(db, 'users', activeUser.uid));
+      
+      if (!userDoc.exists()) {
+        setAppState('profile_setup');
+        return;
+      }
+
+      setUserProfile(userDoc.data() as UserProfile);
+      setAppState('profile_selection');
+    } catch (error) {
+      console.error('Error in post-login navigation:', error);
+      // If we can't check profile, maybe something is wrong with rules or connection
+      // For now, let's try to go to profile setup as a fallback if they are logged in
+      setAppState('profile_setup');
+    }
+  };
 
   const filteredVideos = MOCK_VIDEOS.filter(video => 
     video.language === selectedLanguage &&
     video.title.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
+  const renderTabContent = () => {
+    switch (activeTab) {
+      case 'home':
+        return (
+          <div className="p-4 md:p-8 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 pb-24">
+            {filteredVideos.length > 0 ? (
+              filteredVideos.map((video) => (
+                <div 
+                  key={video.id} 
+                  className="flex flex-col gap-3 group cursor-pointer"
+                  onClick={() => setSelectedVideo(video)}
+                >
+                <div className="aspect-video relative rounded-2xl overflow-hidden bg-gray-800">
+                  <img 
+                    src={video.thumbnail} 
+                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" 
+                    alt={video.title}
+                    referrerPolicy="no-referrer"
+                  />
+                  <span className="absolute bottom-2 right-2 bg-black/80 px-1.5 py-0.5 rounded text-xs font-bold text-white">
+                    {video.duration}
+                  </span>
+                </div>
+                
+                <div className="flex gap-3 px-1">
+                  <div className="flex flex-col gap-1 flex-1">
+                    <h3 className="font-bold text-base leading-snug line-clamp-2 text-white group-hover:text-brand-primary transition-colors">
+                      {video.title}
+                    </h3>
+                    <div className="flex flex-col text-sm text-gray-400">
+                      <span>{video.views} views</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ))
+          ) : (
+            <div className="col-span-full py-20 flex flex-col items-center justify-center text-gray-500 gap-4">
+              <div className="w-20 h-20 rounded-full bg-white/5 flex items-center justify-center">
+                <Compass className="w-10 h-10" />
+              </div>
+              <p className="text-lg font-bold">No videos found matching "{searchQuery}"</p>
+            </div>
+          )}
+          </div>
+        );
+      case 'search':
+        return (
+          <div className="flex-1 flex flex-col items-center justify-center p-6 text-center py-40">
+            <div className="w-20 h-20 bg-white/5 rounded-full flex items-center justify-center mb-4">
+              <Compass className="w-10 h-10 text-gray-600" />
+            </div>
+            <h2 className="text-xl font-bold mb-2">Search Content</h2>
+            <p className="text-gray-500 max-w-xs">Looking for movies, shows or channels? Use the search bar above.</p>
+          </div>
+        );
+      case 'myspace':
+        return (
+          <MySpace 
+            userProfile={userProfile} 
+            watchlist={MOCK_VIDEOS.slice(0, 3)} 
+            isTamilanPlanActive={isTamilanPlanActive}
+          />
+        );
+      default:
+        return null;
+    }
+  };
+
   if (appState === 'splash') {
     return (
       <SplashScreen 
         onFinish={() => {
-          const savedLanguage = localStorage.getItem('vaagai_language');
-          if (savedLanguage) {
-            setAppState('main');
+          if (auth.currentUser) {
+            handlePostLoginNavigation();
           } else {
-            setAppState('language');
+            setAppState('login');
           }
+        }} 
+      />
+    );
+  }
+
+  if (appState === 'login') {
+    return (
+      <Login 
+        onLoginSuccess={(loggedUser) => {
+          handlePostLoginNavigation(loggedUser);
+        }} 
+      />
+    );
+  }
+
+  if (appState === 'profile_selection') {
+    return (
+      <ProfileSelection 
+        userProfile={userProfile}
+        onSelect={() => setAppState('main')}
+      />
+    );
+  }
+
+  if (appState === 'profile_setup') {
+    return (
+      <UserProfileSetup 
+        onComplete={async () => {
+          if (auth.currentUser) {
+            const userDoc = await getDoc(doc(db, 'users', auth.currentUser.uid));
+            if (userDoc.exists()) {
+              setUserProfile(userDoc.data() as UserProfile);
+            }
+          }
+          setAppState('main');
         }} 
       />
     );
@@ -187,108 +287,48 @@ export default function App() {
   if (appState === 'language') {
     return (
       <LanguageSelector 
-        onSelect={(lang) => {
+        onSelect={async (lang) => {
           setSelectedLanguage(lang);
           localStorage.setItem('vaagai_language', lang);
-          setAppState('main');
+          
+          if (auth.currentUser) {
+            const userDoc = await getDoc(doc(db, 'users', auth.currentUser.uid));
+            if (!userDoc.exists()) {
+              setAppState('profile_setup');
+            } else {
+              setUserProfile(userDoc.data() as UserProfile);
+              setAppState('main');
+            }
+          } else {
+            setAppState('login');
+          }
         }} 
       />
     );
   }
 
   return (
-    <div id="youtube-root" className="min-h-screen bg-bg-dark text-white font-sans flex flex-col md:flex-row">
-      {/* Sidebar - Desktop Only */}
-      <aside className="hidden md:flex flex-col w-64 h-screen sticky top-0 bg-bg-dark p-4 gap-6 border-r border-white/5">
-        <div 
-          onClick={() => setAppState('language')}
-          className="flex items-center gap-4 px-2 mb-4 cursor-pointer group"
-        >
-          <div className="w-8 h-8 rounded bg-brand-primary flex items-center justify-center font-black text-xl italic group-hover:rotate-12 transition-transform">V</div>
-          <span className="text-xl font-display font-bold text-white tracking-tighter">VAAGAI</span>
-        </div>
-        
-        <nav className="flex flex-col gap-1">
-          {[
-            { icon: Home, label: 'Home', active: true },
-            { icon: PlaySquare, label: 'Shorts' },
-            { icon: Compass, label: 'Subscriptions' }
-          ].map((item) => (
-            <button 
-              key={item.label}
-              className={`flex items-center gap-6 p-3 rounded-xl transition-colors ${item.active ? 'bg-white/10' : 'hover:bg-white/5'}`}
-            >
-              <item.icon className={`w-6 h-6 ${item.active ? 'text-white' : 'text-gray-400'}`} />
-              <span className={`text-sm ${item.active ? 'font-bold' : 'font-medium text-gray-400'}`}>{item.label}</span>
-            </button>
-          ))}
-          
-          <div className="h-px bg-white/5 my-4" />
-          
-          <button 
-            onClick={() => setAppState('language')}
-            className="flex items-center gap-6 p-3 rounded-xl hover:bg-white/5 transition-colors"
-          >
-            <div className="w-6 h-6 rounded-full bg-brand-primary/20 flex items-center justify-center">
-              <span className="text-[10px] font-black text-brand-primary uppercase">
-                {selectedLanguage?.charAt(0)}
-              </span>
-            </div>
-            <span className="text-sm font-medium text-gray-400 capitalize">Change Language</span>
-          </button>
-        </nav>
-      </aside>
-
+    <div id="youtube-root" className="min-h-screen bg-bg-dark text-white font-sans flex flex-col h-screen overflow-hidden">
       {/* Main Content */}
-      <main className="flex-1 flex flex-col">
-        <Navbar 
-          isTamilanPlanActive={isTamilanPlanActive} 
-          searchQuery={searchQuery}
-          onSearchChange={setSearchQuery}
-        />
-        
-        {/* Video Grid */}
-        <div className="p-4 md:p-8 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-          {filteredVideos.length > 0 ? (
-            filteredVideos.map((video) => (
-              <div 
-                key={video.id} 
-                className="flex flex-col gap-3 group cursor-pointer"
-                onClick={() => setSelectedVideo(video)}
-              >
-              <div className="aspect-video relative rounded-2xl overflow-hidden bg-gray-800">
-                <img 
-                  src={video.thumbnail} 
-                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" 
-                  alt={video.title}
-                  referrerPolicy="no-referrer"
-                />
-                <span className="absolute bottom-2 right-2 bg-black/80 px-1.5 py-0.5 rounded text-xs font-bold text-white">
-                  {video.duration}
-                </span>
-              </div>
-              
-              <div className="flex gap-3 px-1">
-                <div className="flex flex-col gap-1 flex-1">
-                  <h3 className="font-bold text-base leading-snug line-clamp-2 text-white group-hover:text-brand-primary transition-colors">
-                    {video.title}
-                  </h3>
-                  <div className="flex flex-col text-sm text-gray-400">
-                    <span>{video.views} views</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-          ))
-        ) : (
-          <div className="col-span-full py-20 flex flex-col items-center justify-center text-gray-500 gap-4">
-            <div className="w-20 h-20 rounded-full bg-white/5 flex items-center justify-center">
-              <Compass className="w-10 h-10" />
-            </div>
-            <p className="text-lg font-bold">No videos found matching "{searchQuery}"</p>
-          </div>
+      <main className="flex-1 flex flex-col overflow-hidden">
+        {activeTab !== 'myspace' && (
+          <Navbar 
+            userProfile={userProfile}
+            isTamilanPlanActive={isTamilanPlanActive} 
+            searchQuery={searchQuery}
+            onSearchChange={setSearchQuery}
+          />
         )}
+        
+        <div className="flex-1 overflow-y-auto">
+          {renderTabContent()}
         </div>
+
+        <BottomNav 
+          activeTab={activeTab} 
+          onTabChange={setActiveTab} 
+          userProfile={userProfile}
+        />
       </main>
 
       {/* Video Player Detail Page */}

@@ -19,6 +19,16 @@ service cloud.firestore {
       return resource.data;
     }
 
+    // Validation for User
+    function isValidUser(data) {
+      return data.keys().hasAll(['uid', 'nickname', 'avatarUrl', 'createdAt', 'updatedAt']) &&
+             data.uid is string && data.uid.size() <= 128 &&
+             data.nickname is string && data.nickname.size() >= 2 && data.nickname.size() <= 20 &&
+             data.avatarUrl is string && data.avatarUrl.size() <= 500 &&
+             data.createdAt is timestamp &&
+             data.updatedAt is timestamp;
+    }
+
     // Validation for Comment
     function isValidComment(data) {
       return data.keys().hasAll(['videoId', 'userId', 'userName', 'text', 'createdAt']) &&
@@ -49,6 +59,21 @@ service cloud.firestore {
                     );
                     
       allow delete: if isSignedIn() && request.auth.uid == existing().userId;
+    }
+
+    match /users/{userId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && 
+                    request.auth.uid == userId && 
+                    isValidUser(incoming()) && 
+                    incoming().uid == userId &&
+                    incoming().createdAt == request.time;
+      allow update: if isSignedIn() && 
+                    request.auth.uid == userId && 
+                    isValidUser(incoming()) && 
+                    incoming().uid == userId &&
+                    incoming().updatedAt == request.time &&
+                    incoming().createdAt == existing().createdAt;
     }
   }
 }

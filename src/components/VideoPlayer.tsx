@@ -2,10 +2,10 @@ import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   X, ChevronLeft, ThumbsUp, ThumbsDown, Share2, Download, 
-  Scissors, MoreHorizontal, MoreVertical, Bell, Info,
+  Scissors, MoreHorizontal, MoreVertical, Bell, Info, Lock,
   Play, Pause, RotateCcw, RotateCw, Volume2, VolumeX,
   Maximize, Minimize, Settings, MessageSquare, SkipBack, SkipForward,
-  Cast
+  Cast, Home
 } from 'lucide-react';
 import { Video } from '../types';
 import { db, auth, signInWithGoogle } from '../lib/firebase';
@@ -89,9 +89,9 @@ interface VideoPlayerProps {
 }
 
 const MOCK_ADS = [
-  'https://res.cloudinary.com/dkc9ru68y/video/upload/v1778762709/vidssave.com_Vasanth_Co_-_Antha_Kaalam_1080P_mebtf1.mp4',
-  'https://res.cloudinary.com/dkc9ru68y/video/upload/v1778762712/Maggi_ready_family_jolly_Tamil_rfomjd.mp4',
-  'https://res.cloudinary.com/dkc9ru68y/video/upload/v1734679811/vidssave.com_MARLIA_ADS-_SATHYA_SAMY_ARUL___TVC___TAMIL___KAYADU_LOHAR_1080P_krg6mv.mp4'
+  'https://res.cloudinary.com/dkc9ru68y/video/upload/v1778810317/Blue_and_Pink_Modern_Business_Service_Promotion_Ads_Video_20260515_072619_0000_g2yko5.mp4',
+  'https://res.cloudinary.com/dkc9ru68y/video/upload/v1778810317/Blue_and_Pink_Modern_Business_Service_Promotion_Ads_Video_20260515_072619_0000_g2yko5.mp4',
+  'https://res.cloudinary.com/dkc9ru68y/video/upload/v1778810317/Blue_and_Pink_Modern_Business_Service_Promotion_Ads_Video_20260515_072619_0000_g2yko5.mp4'
 ];
 
 /**
@@ -114,6 +114,8 @@ export default function VideoPlayer({ video, onClose, isTamilanPlanActive, onPla
   const [adRemainingTime, setAdRemainingTime] = useState(0);
   const [isAdMuted, setIsAdMuted] = useState(true);
   const [showSubscriptionModal, setShowSubscriptionModal] = useState(false);
+  const [adCurrentTime, setAdCurrentTime] = useState(0);
+  const [adDuration, setAdDuration] = useState(0);
   const [comments, setComments] = useState<Comment[]>([]);
   const [newComment, setNewComment] = useState('');
   const [isPostingComment, setIsPostingComment] = useState(false);
@@ -135,6 +137,19 @@ export default function VideoPlayer({ video, onClose, isTamilanPlanActive, onPla
   const [showCastModal, setShowCastModal] = useState(false);
   const [castingDevice, setCastingDevice] = useState<string | null>(null);
   
+  const [selectedQuality, setSelectedQuality] = useState('1080p');
+  const [showSettingsMenu, setShowSettingsMenu] = useState(false);
+  const [activeSettingsTab, setActiveSettingsTab] = useState<'main' | 'quality' | 'captions' | 'speed'>('main');
+  
+  const [selectedLanguage, setSelectedLanguage] = useState<'tamil' | 'english' | 'none'>('none');
+  const [playbackSpeed, setPlaybackSpeed] = useState(1);
+  
+  const [isScanning, setIsScanning] = useState(false);
+  const [isScreenCaptureBlocked, setIsScreenCaptureBlocked] = useState(false);
+  const [discoveredDevices, setDiscoveredDevices] = useState<{name: string, id: string, subtitle: string}[]>([]);
+  const [isHotspotReady, setIsHotspotReady] = useState(false);
+  const [discoveryStep, setDiscoveryStep] = useState<'prep' | 'scanning' | 'results'>('prep');
+  
   const containerRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const adVideoRef = useRef<HTMLVideoElement>(null);
@@ -143,6 +158,30 @@ export default function VideoPlayer({ video, onClose, isTamilanPlanActive, onPla
   const ignoreNextSeekRef = useRef(false);
 
   const [adPlayFailed, setAdPlayFailed] = useState(false);
+  
+  useEffect(() => {
+    let timeout: NodeJS.Timeout;
+    if (showControls && isPlaying) {
+      timeout = setTimeout(() => {
+        setShowControls(false);
+      }, 3000);
+    }
+    return () => clearTimeout(timeout);
+  }, [showControls, isPlaying]);
+
+  const toggleControls = (e: React.MouseEvent | React.TouchEvent) => {
+    // Don't toggle if clicking on interactive elements
+    if ((e.target as HTMLElement).closest('button, input, [role="button"]')) return;
+    
+    // On mobile, touch usually means "show controls"
+    if (e.type === 'touchstart') {
+      setShowControls(true);
+      return;
+    }
+
+    // On desktop or specific clicks, toggle
+    setShowControls(prev => !prev);
+  };
 
   useEffect(() => {
     if (video) {
@@ -157,6 +196,10 @@ export default function VideoPlayer({ video, onClose, isTamilanPlanActive, onPla
         setAdPlayFailed(false);
         setIsCasting(false);
         setCastingDevice(null);
+        setSelectedQuality('1080p');
+        setPlaybackSpeed(1); // Reset speed on video change
+        setSelectedLanguage('none'); // Reset captions on video change
+        setShowSettingsMenu(false);
         window.scrollTo(0, 0);
 
         // Fetch comments for this video
@@ -181,6 +224,54 @@ export default function VideoPlayer({ video, onClose, isTamilanPlanActive, onPla
   }, [video, isTamilanPlanActive]);
 
   useEffect(() => {
+    const blockCapture = () => {
+      setIsScreenCaptureBlocked(true);
+    };
+
+    const unblockCapture = () => {
+      // Use a shorter delay for better responsiveness
+      setTimeout(() => {
+        if (document.visibilityState === 'visible') {
+          setIsScreenCaptureBlocked(false);
+        }
+      }, 800);
+    };
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Precise list of screenshot-related keys
+      const blockedKeys = ['PrintScreen', 'Snapshot'];
+      if (blockedKeys.includes(e.key) || 
+         (e.metaKey && e.shiftKey && (e.key === '4' || e.key === '3' || e.key === '5'))) {
+        blockCapture();
+        setTimeout(unblockCapture, 3000);
+      }
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') {
+        blockCapture();
+      } else {
+        unblockCapture();
+      }
+    };
+
+    window.addEventListener('blur', () => {
+      // Only block on blur if it's likely a window switch (not just a click on browser UI)
+      // We'll rely more on visibilitychange and keydown
+    });
+
+    window.addEventListener('focus', unblockCapture);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      window.removeEventListener('focus', unblockCapture);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, []);
+
+  useEffect(() => {
     if (isAdPlaying && adVideoRef.current && adQueue[currentAdIndex]) {
       adVideoRef.current.play().catch(err => {
         console.warn("Ad autoplay blocked:", err);
@@ -188,6 +279,20 @@ export default function VideoPlayer({ video, onClose, isTamilanPlanActive, onPla
       });
     }
   }, [isAdPlaying, currentAdIndex, adQueue]);
+
+  const parseDuration = (durationStr: string) => {
+    if (!durationStr) return 0;
+    const parts = durationStr.split(':').map(Number);
+    if (parts.length === 2) return parts[0] * 60 + parts[1];
+    if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2];
+    return 0;
+  };
+
+  useEffect(() => {
+    if (video && !isDirectVideo(video.videoUrl)) {
+      setDuration(parseDuration(video.duration));
+    }
+  }, [video]);
 
   if (!video) return null;
 
@@ -268,16 +373,33 @@ export default function VideoPlayer({ video, onClose, isTamilanPlanActive, onPla
   };
 
   const handleCast = () => {
-    // Attempt to use native browser casting if available
-    const videoElement = videoRef.current;
-    if (videoElement && (videoElement as any).remote) {
-      (videoElement as any).remote.prompt().catch((err: any) => {
-        console.warn("Remote Playback failed or cancelled:", err);
-        setShowCastModal(true);
-      });
-    } else {
-      setShowCastModal(true);
-    }
+    setShowCastModal(true);
+    setDiscoveryStep('prep');
+    setIsHotspotReady(false);
+    setDiscoveredDevices([]);
+  };
+
+  const startDiscovery = () => {
+    setDiscoveryStep('scanning');
+    setIsScanning(true);
+    setDiscoveredDevices([]);
+    
+    // Simulate a more realistic network scan
+    setTimeout(() => {
+      if (isHotspotReady) {
+        setDiscoveredDevices([
+          { name: 'Happy Cast TV', id: 'happy-cast', subtitle: 'Connected via Hotspot' },
+          { name: 'Living Room TV', id: 'lr-tv', subtitle: 'Available on network' }
+        ]);
+      } else {
+        // If hotspot wasn't configured as "ready" in UI, don't find it
+        setDiscoveredDevices([
+          { name: 'Living Room TV', id: 'lr-tv', subtitle: 'Available on network' }
+        ]);
+      }
+      setIsScanning(false);
+      setDiscoveryStep('results');
+    }, 2500);
   };
 
   const selectCastDevice = (device: string) => {
@@ -294,6 +416,71 @@ export default function VideoPlayer({ video, onClose, isTamilanPlanActive, onPla
   const stopCasting = () => {
     setIsCasting(false);
     setCastingDevice(null);
+  };
+
+  const videoQualities = [
+    { label: '4K', value: '4k', isPremium: true },
+    { label: '2K', value: '2k', isPremium: true },
+    { label: '1080p', value: '1080p', isPremium: true },
+    { label: '720p', value: '720p', isPremium: false },
+    { label: '480p', value: '480p', isPremium: false },
+    { label: '360p', value: '360p', isPremium: false },
+    { label: '144p', value: '144p', isPremium: false, hasDefects: true },
+  ];
+
+  const handleQualityChange = (quality: typeof videoQualities[0]) => {
+    if (quality.isPremium && !isTamilanPlanActive) {
+      setShowSubscriptionModal(true);
+      setShowSettingsMenu(false);
+    } else {
+      setSelectedQuality(quality.value);
+      setActiveSettingsTab('main');
+      setShowSettingsMenu(false);
+    }
+  };
+
+  const playbackSpeeds = [
+    { label: '0.25x', value: 0.25 },
+    { label: '0.5x', value: 0.5 },
+    { label: '0.75x', value: 0.75 },
+    { label: 'Normal', value: 1 },
+    { label: '1.25x', value: 1.25 },
+    { label: '1.5x', value: 1.5 },
+    { label: '2x', value: 2 },
+  ];
+
+  const captionLanguages = [
+    { label: 'Off', value: 'none' },
+    { label: 'Tamil', value: 'tamil' },
+    { label: 'English', value: 'english' },
+  ];
+
+  const handleSpeedChange = (speed: number) => {
+    setPlaybackSpeed(speed);
+    if (videoRef.current) {
+      videoRef.current.playbackRate = speed;
+    }
+    setActiveSettingsTab('main');
+    setShowSettingsMenu(false);
+  };
+
+  const handleLanguageChange = (lang: 'none' | 'tamil' | 'english') => {
+    setSelectedLanguage(lang);
+    setActiveSettingsTab('main');
+    setShowSettingsMenu(false);
+  };
+
+  const getQualityStyle = (): React.CSSProperties => {
+    switch (selectedQuality) {
+      case '4k': return { filter: 'contrast(1.02) saturate(1.05) brightness(1.02)' };
+      case '2k': return { filter: 'contrast(1.01) saturate(1.02)' };
+      case '1080p': return { filter: 'none' };
+      case '720p': return { filter: 'none' };
+      case '480p': return { filter: 'none' };
+      case '360p': return { filter: 'blur(0.4px)' };
+      case '144p': return { filter: 'blur(0.8px) contrast(0.95)' };
+      default: return {};
+    }
   };
 
   const handlePostComment = async (e: React.FormEvent) => {
@@ -370,27 +557,34 @@ export default function VideoPlayer({ video, onClose, isTamilanPlanActive, onPla
       setIsSeekingAds(false);
       setAdPlayFailed(false);
       setTimeout(() => {
-        if (videoRef.current) {
+        if (!isDirectVideo(video.videoUrl)) {
+          setIsPlaying(true);
+        } else if (videoRef.current) {
+          // Restore playback speed after ad
+          videoRef.current.playbackRate = playbackSpeed;
           videoRef.current.play().catch(err => {
             console.warn("Autoplay after ad blocked:", err);
             setIsPlaying(false);
           });
-          // Reset the ignore flag after a short delay once playback has resumed
-          setTimeout(() => {
-            ignoreNextSeekRef.current = false;
-          }, 1000);
         }
+        
+        // Reset the ignore flag after a short delay once playback has resumed
+        setTimeout(() => {
+          ignoreNextSeekRef.current = false;
+        }, 1000);
       }, 100);
     }
   };
 
   const handleAdTimeUpdate = () => {
     if (adVideoRef.current) {
-      const duration = adVideoRef.current.duration;
-      const currentTime = adVideoRef.current.currentTime;
-      if (!isNaN(duration) && !isNaN(currentTime)) {
-        const remaining = Math.ceil(duration - currentTime);
+      const d = adVideoRef.current.duration;
+      const ct = adVideoRef.current.currentTime;
+      if (!isNaN(d) && !isNaN(ct)) {
+        const remaining = Math.ceil(d - ct);
         setAdRemainingTime(remaining >= 0 ? remaining : 0);
+        setAdCurrentTime(ct);
+        setAdDuration(d);
       }
     }
   };
@@ -455,15 +649,19 @@ export default function VideoPlayer({ video, onClose, isTamilanPlanActive, onPla
   };
 
   const skip = (seconds: number) => {
-    if (!videoRef.current || isAdPlaying) return;
-    const targetTime = Math.max(0, Math.min(videoRef.current.currentTime + seconds, duration));
+    if (isAdPlaying) return;
+    
+    const isDirect = isDirectVideo(video.videoUrl);
+    const targetTime = Math.max(0, Math.min((isDirect ? videoRef.current?.currentTime || 0 : currentTime) + seconds, duration || 9999));
     
     if (seconds > 0 && !isTamilanPlanActive) {
       // Forward skip -> Trigger Ad
       startAds(targetTime, true);
     } else {
       // Backward skip or Plan Active -> Just seek
-      videoRef.current.currentTime = targetTime;
+      if (isDirect && videoRef.current) {
+        videoRef.current.currentTime = targetTime;
+      }
       setCurrentTime(targetTime);
       lastTimeRef.current = targetTime;
     }
@@ -530,17 +728,38 @@ export default function VideoPlayer({ video, onClose, isTamilanPlanActive, onPla
     } else if (url.includes('youtu.be/')) {
       const id = url.split('youtu.be/')[1]?.split('?')[0];
       embedUrl = `https://www.youtube.com/embed/${id}`;
+    } else if (url.includes('drive.google.com')) {
+      let id = '';
+      if (url.includes('/file/d/')) {
+        id = url.split('/file/d/')[1]?.split('/')[0];
+      } else if (url.includes('id=')) {
+        id = url.split('id=')[1]?.split('&')[0];
+      }
+      
+      if (id) {
+        embedUrl = `https://drive.google.com/file/d/${id}/preview?autoplay=1`;
+      }
     }
     
-    // Add autoplay if not present
-    if (!embedUrl.includes('autoplay=')) {
+    // Add autoplay if not present and not Drive
+    if (!embedUrl.includes('drive.google.com') && !embedUrl.includes('autoplay=')) {
       embedUrl += (embedUrl.includes('?') ? '&' : '?') + 'autoplay=1';
     }
     return embedUrl;
   };
 
   const isDirectVideo = (url: string) => {
-    return url.match(/\.(mp4|webm|ogg|mp3|m4a|m4v|f4v|f4p|f4a|f4b)(\?.*)?$/i) !== null;
+    if (!url) return false;
+    // Google Drive links should not be treated as direct videos to prevent download issues
+    if (url.includes('drive.google.com')) return false;
+    
+    const extensionPattern = /\.(mp4|webm|ogg|mp3|m4a|m4v|f4v|f4p|f4a|f4b)(\?.*)?$/i;
+    const isDirectByExt = url.match(extensionPattern) !== null;
+    
+    // Check for Cloudinary or other common direct video formats that might not have extension at the very end
+    const isCloudinaryVideo = url.includes('cloudinary.com') && (url.includes('/video/') || url.includes('/upload/v'));
+    
+    return isDirectByExt || isCloudinaryVideo;
   };
 
   return (
@@ -552,117 +771,165 @@ export default function VideoPlayer({ video, onClose, isTamilanPlanActive, onPla
         exit={{ opacity: 0, y: 20 }}
         className="fixed inset-0 z-50 bg-bg-dark flex flex-col overflow-y-auto"
       >
-        <div ref={containerRef} className="sticky top-0 z-50 bg-black w-full aspect-video group">
-          <div className={`absolute top-4 left-4 z-20 transition-opacity duration-300 ${showControls ? 'opacity-100' : 'opacity-0'}`}>
-            <button 
-              onClick={onClose}
-              className="p-2 bg-black/40 rounded-full hover:bg-black/60 transition-colors text-white"
-            >
-              <ChevronLeft className="w-6 h-6" />
-            </button>
-          </div>
+        <div 
+          ref={containerRef} 
+          className="sticky top-0 z-50 bg-black w-full aspect-video group select-none overflow-hidden shrink-0 min-h-[211px]" 
+          onContextMenu={(e) => e.preventDefault()}
+          onClick={toggleControls}
+          onTouchStart={toggleControls}
+        >
+          {/* Top buttons removed as per user request for clean playback */}
+          
+          <div className="w-full h-full relative overflow-hidden">
+              {/* Main Content (Always Mounted for Iframe Stability) */}
+              <div className="w-full h-full min-h-[220px]" style={getQualityStyle()}>
+                {/* Background Thumbnail for continuity */}
+                <div 
+                  className="absolute inset-0 z-0 opacity-40 blur-xl scale-110"
+                  style={{ 
+                    backgroundImage: `url(${video.thumbnail})`,
+                    backgroundSize: 'cover',
+                    backgroundPosition: 'center'
+                  }}
+                />
 
-            <div className="w-full h-full relative" onMouseMove={() => {
-              setShowControls(true);
-              const timeout = setTimeout(() => {
-                if (isPlaying && !isAdPlaying) setShowControls(false);
-              }, 3000);
-              return () => clearTimeout(timeout);
-            }}>
-              {/* Background Thumbnail for continuity */}
-              <div 
-                className="absolute inset-0 z-0 opacity-40 blur-xl scale-110"
-                style={{ 
-                  backgroundImage: `url(${video.thumbnail})`,
-                  backgroundSize: 'cover',
-                  backgroundPosition: 'center'
-                }}
-              />
+                {/* Captions Overlay (Universal) */}
+                <AnimatePresence>
+                  {isPlaying && !isAdPlaying && selectedLanguage !== 'none' && (
+                    <motion.div 
+                      initial={{ opacity: 0, y: 20 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: 20 }}
+                      className="absolute bottom-24 left-1/2 -translate-x-1/2 z-40 w-full max-w-xl px-4 pointer-events-none"
+                    >
+                      <div className="bg-black/60 backdrop-blur-md px-6 py-3 rounded-2xl border border-white/10 shadow-2xl">
+                        <p className="text-white text-base md:text-xl font-bold text-center leading-relaxed drop-shadow-lg">
+                          {selectedLanguage === 'tamil' 
+                            ? "வணக்கம், இந்த வீடியோவைப் பார்த்ததற்கு நன்றி!" 
+                            : "Hello, thank you for watching this video!"}
+                        </p>
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
 
-              {isAdPlaying ? (
-                <div className="absolute inset-0 bg-black/40 z-10 flex items-center justify-center backdrop-blur-sm group/ad">
-                  <video
-                    ref={adVideoRef}
-                    key={`ad-${currentAdIndex}`}
-                    autoPlay
-                    playsInline
-                    muted={isAdMuted}
-                    className="w-full h-full object-contain relative z-20 shadow-2xl"
-                    src={adQueue[currentAdIndex]}
-                    onEnded={handleAdEnded}
-                    onTimeUpdate={handleAdTimeUpdate}
-                    onError={(e) => {
-                      console.error("Ad failed to load, skipping:", adQueue[currentAdIndex]);
-                      handleAdEnded();
-                    }}
-                    onClick={(e) => {
-                      const video = e.currentTarget;
-                      if (video.paused) video.play();
-                      setIsAdMuted(!isAdMuted);
-                    }}
-                  />
-                  
-                  {/* Ad Play/Unmute Overlay */}
-                  <div className={`absolute inset-0 z-30 flex flex-col items-center justify-center pointer-events-none transition-opacity ${adPlayFailed ? 'opacity-100' : 'opacity-0 group-hover/ad:opacity-100'}`}>
-                    <div className="bg-black/60 p-6 rounded-full backdrop-blur-md border border-white/20 pointer-events-auto cursor-pointer" onClick={() => {
-                      if (adVideoRef.current) {
-                        adVideoRef.current.play();
-                        setAdPlayFailed(false);
-                      }
-                      setIsAdMuted(false);
-                    }}>
-                      {isAdMuted ? <VolumeX className="w-12 h-12 text-white" /> : <Play className="w-12 h-12 text-white fill-white" />}
-                    </div>
-                    <p className="text-white mt-4 font-bold text-sm bg-black/40 px-4 py-1 rounded-full">
-                      {adPlayFailed ? 'Autoplay Blocked - Tap to Play Ad' : (isAdMuted ? 'Tap to Unmute Ad' : 'Ad Playing')}
+                {/* Main Video Play Overlay */}
+                {!isPlaying && !isAdPlaying && (
+                  <div className="absolute inset-0 z-40 bg-black/40 flex flex-col items-center justify-center backdrop-blur-sm">
+                    <motion.button
+                      initial={{ opacity: 0, scale: 0.8 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      whileHover={{ scale: 1.1 }}
+                      whileTap={{ scale: 0.9 }}
+                      onClick={() => {
+                        setIsPlaying(true);
+                        if (videoRef.current) {
+                          videoRef.current.play();
+                        }
+                      }}
+                      className="w-24 h-24 bg-brand-primary rounded-full flex items-center justify-center text-white shadow-[0_0_50px_rgba(30,215,96,0.5)] z-50 hover:bg-brand-primary/90 transition-all border-4 border-white/20"
+                    >
+                      <Play className="w-12 h-12 ml-1 fill-white" />
+                    </motion.button>
+                    <p className="text-white mt-6 font-black tracking-widest text-sm uppercase bg-black/40 px-6 py-2 rounded-full backdrop-blur-md border border-white/10">
+                      Tap To Start Video
                     </p>
                   </div>
-                  
-                  {/* Dynamic Ad Timer Overlay - Pill style with blue theme */}
+                )}
+
+                {!isDirectVideo(video.videoUrl) ? (
+                  isPlaying && (
+                    <iframe
+                      src={getEmbedUrl(video.videoUrl)}
+                      className={`w-full h-full border-none relative z-30 transition-opacity duration-500 ${isAdPlaying ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}
+                      allowFullScreen
+                      allow="autoplay; encrypted-media; picture-in-picture"
+                    />
+                  )
+                ) : (
+                  <video
+                    ref={videoRef}
+                    autoPlay={false}
+                    controls={false}
+                    playsInline
+                    className={`w-full h-full object-contain relative z-10 transition-opacity duration-500 ${isAdPlaying ? 'opacity-0' : 'opacity-100'}`}
+                    src={video.videoUrl}
+                    onTimeUpdate={handleTimeUpdate}
+                    onPlay={() => setIsPlaying(true)}
+                    onPause={() => setIsPlaying(false)}
+                    onLoadedMetadata={(e) => setDuration(e.currentTarget.duration)}
+                    poster={video.thumbnail}
+                    onClick={togglePlay}
+                  />
+                )}
+              </div>
+
+              {/* Ad Overlay (Mounted on top) */}
+              <AnimatePresence>
+                {isAdPlaying && (
                   <motion.div 
-                    initial={{ opacity: 0, x: 20 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    className="absolute top-4 right-4 z-30"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    className="absolute inset-0 bg-black z-[45] flex items-center justify-center group/ad"
                   >
-                    <div className="bg-blue-900/40 backdrop-blur-2xl px-6 py-2 rounded-full border border-blue-400/20 shadow-[0_8px_32px_rgba(0,0,0,0.4)] flex items-center gap-2">
-                      <div className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse" />
-                      <span className="text-white font-black text-sm md:text-base tracking-tight whitespace-nowrap">
-                        Ad {currentAdIndex + 1}/{adQueue.length} • Ends in {adRemainingTime}s
-                      </span>
+                    <video
+                      ref={adVideoRef}
+                      key={`ad-${currentAdIndex}`}
+                      autoPlay
+                      playsInline
+                      muted={isAdMuted}
+                      className="w-full h-full object-contain relative z-20 shadow-2xl"
+                      src={adQueue[currentAdIndex]}
+                      onEnded={handleAdEnded}
+                      onTimeUpdate={handleAdTimeUpdate}
+                      onError={(e) => {
+                        console.error("Ad failed to load, skipping:", adQueue[currentAdIndex]);
+                        handleAdEnded();
+                      }}
+                      onClick={(e) => {
+                        const video = e.currentTarget;
+                        if (video.paused) video.play();
+                        setIsAdMuted(!isAdMuted);
+                      }}
+                    />
+                    
+                    {/* Ad Play/Unmute Overlay */}
+                    <div className={`absolute inset-0 z-30 flex flex-col items-center justify-center pointer-events-none transition-opacity ${adPlayFailed ? 'opacity-100' : 'opacity-0 group-hover/ad:opacity-100'}`}>
+                      <div className="bg-black/60 p-6 rounded-full backdrop-blur-md border border-white/20 pointer-events-auto cursor-pointer" onClick={() => {
+                        if (adVideoRef.current) {
+                          adVideoRef.current.play();
+                          setAdPlayFailed(false);
+                        }
+                        setIsAdMuted(false);
+                      }}>
+                        {isAdMuted ? <VolumeX className="w-12 h-12 text-white" /> : <Play className="w-12 h-12 text-white fill-white" />}
+                      </div>
+                      <p className="text-white mt-4 font-bold text-sm bg-black/40 px-4 py-1 rounded-full">
+                        {adPlayFailed ? 'Autoplay Blocked - Tap to Play Ad' : (isAdMuted ? 'Tap to Unmute Ad' : 'Ad Playing')}
+                      </p>
                     </div>
+                    
+                    {/* Dynamic Ad Timer Overlay */}
+                    <motion.div 
+                      initial={{ opacity: 0, x: 20 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      className="absolute top-4 right-4 z-[48]"
+                    >
+                      <div className="bg-blue-900/40 backdrop-blur-2xl px-6 py-2 rounded-full border border-blue-400/20 shadow-[0_8px_32px_rgba(0,0,0,0.4)] flex items-center gap-2">
+                        <div className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse" />
+                        <span className="text-white font-black text-sm md:text-base tracking-tight whitespace-nowrap">
+                          Ad {currentAdIndex + 1}/{adQueue.length} • Ends in {adRemainingTime}s
+                        </span>
+                      </div>
+                    </motion.div>
                   </motion.div>
-                </div>
-              ) : null}
-
-              {!isAdPlaying && !isDirectVideo(video.videoUrl) && (
-                <iframe
-                  src={getEmbedUrl(video.videoUrl)}
-                  className="w-full h-full border-none"
-                  allowFullScreen
-                  allow="autoplay; encrypted-media; picture-in-picture"
-                />
-              )}
-
-              {isDirectVideo(video.videoUrl) && (
-                <video
-                  ref={videoRef}
-                  autoPlay={false}
-                  controls={false}
-                  playsInline
-                  className={`w-full h-full object-contain ${isAdPlaying ? 'hidden' : ''}`}
-                  src={video.videoUrl}
-                  onTimeUpdate={handleTimeUpdate}
-                  onPlay={() => setIsPlaying(true)}
-                  onPause={() => setIsPlaying(false)}
-                  onLoadedMetadata={(e) => setDuration(e.currentTarget.duration)}
-                  poster={video.thumbnail}
-                  onClick={togglePlay}
-                />
-              )}
+                )}
+              </AnimatePresence>
 
               {/* Custom Controls Overlay - Only show for direct video files */}
               {!isAdPlaying && isDirectVideo(video.videoUrl) && (
-              <div className={`absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/40 flex flex-col justify-between transition-opacity duration-300 ${showControls || !isPlaying ? 'opacity-100' : 'opacity-0'}`}>
+              <div className={`absolute inset-0 z-40 bg-gradient-to-t from-black/80 via-transparent to-black/40 flex flex-col justify-between transition-opacity duration-300 ${showControls || !isPlaying ? 'opacity-100' : 'opacity-0'}`}>
                 {/* Center Play Button */}
                 <div className="flex-1 flex items-center justify-center">
                   <motion.button
@@ -686,69 +953,71 @@ export default function VideoPlayer({ video, onClose, isTamilanPlanActive, onPla
                 </div>
 
                 {/* Bottom Controls */}
-                <div className="p-4 md:p-6 flex flex-col gap-2">
-                  {/* Progress Bar */}
-                  <div 
-                    ref={progressRef}
-                    className="relative group/progress h-2 flex items-center mb-6"
-                    onMouseMove={handleProgressBarMouseMove}
-                    onMouseLeave={handleProgressBarMouseLeave}
-                  >
-                    <input
-                      type="range"
-                      min={0}
-                      max={duration}
-                      step={0.1}
-                      value={currentTime}
-                      onChange={handleProgressChange}
-                      className="absolute inset-0 w-full opacity-0 z-20 cursor-pointer"
-                    />
-                    <div className="absolute inset-x-0 h-1 bg-white/20 rounded-full overflow-hidden transition-all group-hover/progress:h-1.5">
-                      {/* Hover Preview Bar */}
-                      {hoverTime !== null && (
-                        <div 
-                          className="absolute inset-y-0 bg-white/20 z-0"
-                          style={{ width: `${(hoverTime / duration) * 100}%` }}
-                        />
-                      )}
-                      <div 
-                        className="h-full bg-brand-primary relative z-10" 
-                        style={{ width: `${(currentTime / duration) * 100}%` }}
-                      ></div>
-                    </div>
-                    {/* Thumb handle */}
+                <div className="p-3 md:p-6 flex flex-col gap-1 md:gap-2 bg-gradient-to-t from-black/90 to-transparent">
+                  {/* Progress Bar Container */}
+                  <div className="flex flex-col gap-1 mb-2">
                     <div 
-                      className="absolute top-1/2 -translate-y-1/2 w-4 h-4 bg-white rounded-full shadow-lg border-2 border-brand-primary z-30 transition-transform scale-0 group-hover/progress:scale-100 pointer-events-none"
-                      style={{ left: `${(currentTime / duration) * 100}%` }}
-                    />
-                    
-                    {/* Timestamp Tooltip */}
-                    <AnimatePresence>
-                      {hoverTime !== null && (
-                        <motion.div 
-                          initial={{ opacity: 0, y: 10, scale: 0.9 }}
-                          animate={{ opacity: 1, y: 0, scale: 1 }}
-                          exit={{ opacity: 0, y: 10, scale: 0.9 }}
-                          className="absolute bottom-6 bg-black/80 backdrop-blur-md text-white text-xs font-mono px-2 py-1 rounded-md border border-white/10 z-40 whitespace-nowrap pointer-events-none shadow-xl"
-                          style={{ left: hoverX, transform: 'translateX(-50%)' }}
-                        >
-                          {formatTime(hoverTime)}
-                        </motion.div>
-                      )}
-                    </AnimatePresence>
+                      ref={progressRef}
+                      className="relative group/progress h-6 flex items-center"
+                      onMouseMove={handleProgressBarMouseMove}
+                      onMouseLeave={handleProgressBarMouseLeave}
+                    >
+                      <input
+                        type="range"
+                        min={0}
+                        max={duration}
+                        step={0.1}
+                        value={currentTime}
+                        onChange={handleProgressChange}
+                        className="absolute inset-x-0 w-full opacity-0 z-20 cursor-pointer h-full"
+                      />
+                      <div className="absolute inset-x-0 h-1 bg-white/20 rounded-full overflow-hidden transition-all group-hover/progress:h-1.5 focus-within:h-1.5">
+                        {/* Hover Preview Bar */}
+                        {hoverTime !== null && (
+                          <div 
+                            className="absolute inset-y-0 bg-white/20 z-0"
+                            style={{ width: `${(hoverTime / duration) * 100}%` }}
+                          />
+                        )}
+                        <div 
+                          className="h-full bg-brand-primary relative z-10" 
+                          style={{ width: `${(currentTime / duration) * 100}%` }}
+                        ></div>
+                      </div>
+                      {/* Thumb handle */}
+                      <div 
+                        className="absolute top-1/2 -translate-y-1/2 w-4 h-4 bg-white rounded-full shadow-lg border-2 border-brand-primary z-30 transition-transform scale-0 group-hover/progress:scale-100 group-focus-within/progress:scale-100 pointer-events-none"
+                        style={{ left: `${(currentTime / duration) * 100}%` }}
+                      />
+                      
+                      {/* Timestamp Tooltip */}
+                      <AnimatePresence>
+                        {hoverTime !== null && (
+                          <motion.div 
+                            initial={{ opacity: 0, y: 10, scale: 0.9 }}
+                            animate={{ opacity: 1, y: 0, scale: 1 }}
+                            exit={{ opacity: 0, y: 10, scale: 0.9 }}
+                            className="absolute bottom-full mb-2 bg-black/80 backdrop-blur-md text-white text-xs font-mono px-2 py-1 rounded-md border border-white/10 z-40 whitespace-nowrap pointer-events-none shadow-xl"
+                            style={{ left: hoverX, transform: 'translateX(-50%)' }}
+                          >
+                            {formatTime(hoverTime)}
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
+                    </div>
 
-                    {/* Time Display Below */}
-                    <div className="flex justify-between w-full text-[10px] sm:text-xs font-mono text-white/70 mt-6 absolute top-0">
+                    {/* Time Display */}
+                    <div className="flex justify-between w-full text-[10px] md:text-sm font-mono text-white font-medium px-0.5">
                       <span>{formatTime(currentTime)}</span>
                       <span>{formatTime(duration)}</span>
                     </div>
                   </div>
 
                   <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-6">
+                    <div className="flex items-center gap-3 md:gap-6">
                       {/* Volume */}
-                      <div className="flex items-center gap-2 group/volume relative">
-                        <button onClick={toggleMute} className="text-white hover:text-brand-primary transition-colors">
+                      <div className="hidden md:flex items-center gap-2 group/volume relative">
+                        <button onClick={toggleMute} className="text-white hover:text-brand-primary transition-colors p-2">
                           {isMuted || volume === 0 ? <VolumeX className="w-6 h-6" /> : <Volume2 className="w-6 h-6" />}
                         </button>
                         <input
@@ -763,43 +1032,206 @@ export default function VideoPlayer({ video, onClose, isTamilanPlanActive, onPla
                       </div>
 
                       {/* Playback Controls (Center/Left) */}
-                      <div className="flex items-center gap-6">
-                        <button onClick={() => skip(-10)} className="text-white hover:text-brand-primary transition-colors p-1">
+                      <div className="flex items-center gap-2 md:gap-6">
+                        <button onClick={(e) => { e.stopPropagation(); skip(-10); }} className="text-white hover:text-brand-primary transition-colors p-2 active:scale-90">
                           <SkipBack className="w-6 h-6" />
                         </button>
-                        <button onClick={togglePlay} className="text-white hover:text-brand-primary transition-colors p-1">
-                          {isPlaying ? <Pause className="w-7 h-7" /> : <Play className="w-7 h-7 fill-white" />}
+                        <button onClick={(e) => { e.stopPropagation(); togglePlay(); }} className="text-white hover:text-brand-primary transition-colors p-2 active:scale-90">
+                          {isPlaying ? <Pause className="w-8 h-8" /> : <Play className="w-8 h-8 fill-white" />}
                         </button>
-                        <button onClick={() => skip(10)} className="text-white hover:text-brand-primary transition-colors p-1">
+                        <button onClick={(e) => { e.stopPropagation(); skip(10); }} className="text-white hover:text-brand-primary transition-colors p-2 active:scale-90">
                           <SkipForward className="w-6 h-6" />
                         </button>
-                        <button onClick={onNextVideo} title="Next Video" className="text-white hover:text-brand-primary transition-colors p-1 ml-2">
+                        <button onClick={(e) => { e.stopPropagation(); onNextVideo(); }} title="Next Video" className="text-white hover:text-brand-primary transition-colors p-2 ml-1 active:scale-90">
                           <SkipForward className="w-6 h-6 fill-white" />
                         </button>
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-6">
-                      <button 
-                        onClick={handleCast}
-                        className={`${isCasting ? 'text-brand-primary animate-pulse' : 'text-white hover:text-brand-primary'} transition-colors p-1 relative`}
-                        title={isCasting ? `Casting to ${castingDevice}` : "Cast to TV"}
-                      >
-                        <Cast className="w-5 h-5" />
-                        {isCasting && <div className="absolute top-0 right-0 w-1.5 h-1.5 bg-brand-primary rounded-full shadow-[0_0_8px_rgba(255,107,0,0.8)]" />}
-                      </button>
-                      <button className="text-white hover:text-brand-primary transition-colors p-1">
-                        <Settings className="w-5 h-5" />
-                      </button>
-                      <button className="text-white hover:text-brand-primary transition-colors p-1">
-                        <MessageSquare className="w-5 h-5" /> {/* CC */}
-                      </button>
-                      <button onClick={toggleFullscreen} className="text-white hover:text-brand-primary transition-colors p-1">
-                        {isFullscreen ? <Minimize className="w-6 h-6" /> : <Maximize className="w-6 h-6" />}
-                      </button>
-                    </div>
+                      <div className="flex items-center gap-2 md:gap-6">
+                        <div className="relative">
+                          <button 
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setShowSettingsMenu(!showSettingsMenu);
+                              setActiveSettingsTab('main');
+                            }}
+                            onTouchStart={(e) => e.stopPropagation()}
+                            className={`text-white hover:text-brand-primary transition-colors p-2 flex items-center gap-1 group active:scale-90 ${showSettingsMenu ? 'text-brand-primary' : ''}`}
+                          >
+                            <Settings className={`w-5 h-5 transition-transform duration-500 ${showSettingsMenu ? 'rotate-90 text-brand-primary' : ''}`} />
+                            <span className="hidden sm:inline text-[10px] font-black group-hover:text-brand-primary">{selectedQuality.toUpperCase()}</span>
+                          </button>
+
+                          {/* In-place Settings Menu (Moved from top to be near the button) */}
+                          <AnimatePresence>
+                            {showSettingsMenu && (
+                              <motion.div 
+                                initial={{ opacity: 0, scale: 0.9, y: 20 }}
+                                animate={{ opacity: 1, scale: 1, y: 0 }}
+                                exit={{ opacity: 0, scale: 0.9, y: 20 }}
+                                onClick={(e) => e.stopPropagation()}
+                                onTouchStart={(e) => e.stopPropagation()}
+                                className="absolute bottom-full right-0 mb-4 bg-black/95 backdrop-blur-2xl border border-white/10 rounded-2xl p-2 min-w-[220px] shadow-2xl z-50 overflow-hidden"
+                              >
+                                {activeSettingsTab === 'main' && (
+                                  <div className="flex flex-col gap-1.5 p-1.5">
+                                    <div className="px-3 py-2 border-b border-white/5 mb-1 flex justify-between items-center">
+                                      <span className="text-[10px] font-black tracking-widest text-gray-400">PLAYBACK SETTINGS</span>
+                                      <button 
+                                        onClick={(e) => { e.stopPropagation(); setShowSettingsMenu(false); }} 
+                                        onTouchStart={(e) => e.stopPropagation()}
+                                        className="text-gray-500 hover:text-white p-1"
+                                      >
+                                        <X className="w-3 h-3" />
+                                      </button>
+                                    </div>
+                                    <button 
+                                      onClick={(e) => { e.stopPropagation(); setActiveSettingsTab('quality'); }} 
+                                      onTouchStart={(e) => e.stopPropagation()}
+                                      className="flex items-center justify-between w-full px-4 py-3 rounded-xl text-left transition-all text-gray-300 hover:bg-white/5 hover:text-white active:bg-white/10"
+                                    >
+                                      <div className="flex items-center gap-3">
+                                        <div className="w-8 h-8 rounded-lg bg-white/5 flex items-center justify-center"><Settings className="w-4 h-4" /></div>
+                                        <span className="text-sm font-bold">Quality</span>
+                                      </div>
+                                      <span className="text-xs text-brand-primary font-black uppercase text-right">{selectedQuality}</span>
+                                    </button>
+                                    <button 
+                                      onClick={(e) => { e.stopPropagation(); setActiveSettingsTab('captions'); }} 
+                                      onTouchStart={(e) => e.stopPropagation()}
+                                      className="flex items-center justify-between w-full px-4 py-3 rounded-xl text-left transition-all text-gray-300 hover:bg-white/5 hover:text-white active:bg-white/10"
+                                    >
+                                      <div className="flex items-center gap-3">
+                                        <div className="w-8 h-8 rounded-lg bg-white/5 flex items-center justify-center"><MessageSquare className="w-4 h-4" /></div>
+                                        <span className="text-sm font-bold">Captions</span>
+                                      </div>
+                                      <span className="text-xs text-brand-primary font-black uppercase text-right">{selectedLanguage === 'none' ? 'Off' : selectedLanguage}</span>
+                                    </button>
+                                    <button 
+                                      onClick={(e) => { e.stopPropagation(); setActiveSettingsTab('speed'); }} 
+                                      onTouchStart={(e) => e.stopPropagation()}
+                                      className="flex items-center justify-between w-full px-4 py-3 rounded-xl text-left transition-all text-gray-300 hover:bg-white/5 hover:text-white active:bg-white/10"
+                                    >
+                                      <div className="flex items-center gap-3">
+                                        <div className="w-8 h-8 rounded-lg bg-white/5 flex items-center justify-center"><RotateCw className="w-4 h-4" /></div>
+                                        <span className="text-sm font-bold">Speed</span>
+                                      </div>
+                                      <span className="text-xs text-brand-primary font-black uppercase text-right">{playbackSpeed === 1 ? 'Normal' : `${playbackSpeed}x`}</span>
+                                    </button>
+                                  </div>
+                                )}
+
+                                {activeSettingsTab === 'quality' && (
+                                  <div className="flex flex-col gap-1">
+                                    <button 
+                                      onClick={(e) => { e.stopPropagation(); setActiveSettingsTab('main'); }} 
+                                      onTouchStart={(e) => e.stopPropagation()}
+                                      className="flex items-center gap-2 px-3 py-2 text-xs font-bold text-gray-400 hover:text-white transition-colors border-b border-white/5 mb-1 text-left"
+                                    >
+                                      <ChevronLeft className="w-4 h-4" /> Back to menu
+                                    </button>
+                                    <div className="max-h-[200px] overflow-y-auto py-1 pr-1 custom-scrollbar">
+                                      {videoQualities.map((q) => (
+                                        <button
+                                          key={q.value}
+                                          onClick={(e) => { e.stopPropagation(); handleQualityChange(q); }}
+                                          onTouchStart={(e) => e.stopPropagation()}
+                                          className={`flex items-center justify-between w-full px-4 py-3 rounded-xl text-left transition-all ${selectedQuality === q.value ? 'bg-brand-primary/20 text-brand-primary' : 'text-gray-400 hover:bg-white/5 hover:text-white active:bg-white/10'}`}
+                                        >
+                                          <span className="text-sm font-bold">{q.label}</span>
+                                          {q.isPremium && (
+                                            <div className="text-[10px] px-2 py-0.5 rounded-md font-black italic bg-brand-primary text-white ml-2">PRO</div>
+                                          )}
+                                        </button>
+                                      ))}
+                                    </div>
+                                  </div>
+                                )}
+
+                                {activeSettingsTab === 'captions' && (
+                                  <div className="flex flex-col gap-1">
+                                    <button 
+                                      onClick={(e) => { e.stopPropagation(); setActiveSettingsTab('main'); }} 
+                                      onTouchStart={(e) => e.stopPropagation()}
+                                      className="flex items-center gap-2 px-3 py-2 text-xs font-bold text-gray-400 hover:text-white transition-colors border-b border-white/5 mb-1 text-left"
+                                    >
+                                      <ChevronLeft className="w-4 h-4" /> Back to menu
+                                    </button>
+                                    <div className="py-1">
+                                      {captionLanguages.map((lang) => (
+                                        <button
+                                          key={lang.value}
+                                          onClick={(e) => { e.stopPropagation(); handleLanguageChange(lang.value as any); }}
+                                          onTouchStart={(e) => e.stopPropagation()}
+                                          className={`flex items-center justify-between w-full px-4 py-3 rounded-xl text-left transition-all ${selectedLanguage === lang.value ? 'bg-brand-primary/20 text-brand-primary' : 'text-gray-400 hover:bg-white/5 hover:text-white active:bg-white/10'}`}
+                                        >
+                                          <span className="text-sm font-bold">{lang.label}</span>
+                                          {selectedLanguage === lang.value && <div className="w-2 h-2 rounded-full bg-brand-primary shadow-[0_0_8px_rgba(255,107,0,1)]" />}
+                                        </button>
+                                      ))}
+                                    </div>
+                                  </div>
+                                )}
+
+                                {activeSettingsTab === 'speed' && (
+                                  <div className="flex flex-col gap-1">
+                                    <button 
+                                      onClick={(e) => { e.stopPropagation(); setActiveSettingsTab('main'); }} 
+                                      onTouchStart={(e) => e.stopPropagation()}
+                                      className="flex items-center gap-2 px-3 py-2 text-xs font-bold text-gray-400 hover:text-white transition-colors border-b border-white/5 mb-1 text-left"
+                                    >
+                                      <ChevronLeft className="w-4 h-4" /> Back to menu
+                                    </button>
+                                    <div className="max-h-[200px] overflow-y-auto py-1 pr-1 custom-scrollbar">
+                                      {playbackSpeeds.map((s) => (
+                                        <button
+                                          key={s.value}
+                                          onClick={(e) => { e.stopPropagation(); handleSpeedChange(s.value); }}
+                                          onTouchStart={(e) => e.stopPropagation()}
+                                          className={`flex items-center justify-between w-full px-4 py-3 rounded-xl text-left transition-all ${playbackSpeed === s.value ? 'bg-brand-primary/20 text-brand-primary' : 'text-gray-400 hover:bg-white/5 hover:text-white active:bg-white/10'}`}
+                                        >
+                                          <span className="text-sm font-bold">{s.label}</span>
+                                          {playbackSpeed === s.value && <div className="w-2 h-2 rounded-full bg-brand-primary shadow-[0_0_8px_rgba(255,107,0,1)]" />}
+                                        </button>
+                                      ))}
+                                    </div>
+                                  </div>
+                                )}
+                              </motion.div>
+                            )}
+                          </AnimatePresence>
+                        </div>
+
+                        <button 
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelectedLanguage(selectedLanguage === 'none' ? 'english' : 'none');
+                          }}
+                          onTouchStart={(e) => e.stopPropagation()}
+                          className={`${selectedLanguage !== 'none' ? 'text-brand-primary' : 'text-white hover:text-brand-primary'} transition-colors p-2 active:scale-90`}
+                        >
+                          <MessageSquare className="w-5 h-5" />
+                        </button>
+
+                        <button 
+                          onClick={(e) => { e.stopPropagation(); handleCast(); }}
+                          onTouchStart={(e) => e.stopPropagation()}
+                          className={`${isCasting ? 'text-brand-primary animate-pulse' : 'text-white hover:text-brand-primary'} transition-colors p-2 relative active:scale-90`}
+                          title={isCasting ? `Casting to ${castingDevice}` : "Cast to TV"}
+                        >
+                          <Cast className="w-5 h-5" />
+                          {isCasting && <div className="absolute top-1 right-1 w-1.5 h-1.5 bg-brand-primary rounded-full shadow-[0_0_8px_rgba(255,107,0,0.8)]" />}
+                        </button>
+                        
+                        <button onClick={(e) => { e.stopPropagation(); toggleFullscreen(); }} className="text-white hover:text-brand-primary transition-colors p-2 active:scale-90">
+                          {isFullscreen ? <Minimize className="w-6 h-6" /> : <Maximize className="w-6 h-6" />}
+                        </button>
+                      </div>
                   </div>
                 </div>
+              </div>
+            )}
 
                 {/* Casting UI Overlay */}
                 <AnimatePresence>
@@ -853,34 +1285,101 @@ export default function VideoPlayer({ video, onClose, isTamilanPlanActive, onPla
                            </div>
                            <h3 className="text-xl font-black text-white">Cast to device</h3>
                          </div>
+                         <div className="flex flex-col gap-3 min-h-[250px] justify-start">
+                           {discoveryStep === 'prep' ? (
+                             <div className="flex flex-col gap-6 py-4">
+                               <div className="space-y-4">
+                                 <div className="flex gap-4 items-start">
+                                   <div className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center font-bold text-xs shrink-0">1</div>
+                                   <p className="text-sm text-gray-300">Turn on your <b>Mobile Hotspot</b> in device settings.</p>
+                                 </div>
+                                 <div className="flex gap-4 items-start">
+                                   <div className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center font-bold text-xs shrink-0">2</div>
+                                   <p className="text-sm text-gray-300">Open the <b>Happy Cast</b> app on your TV.</p>
+                                 </div>
+                                 <div className="flex gap-4 items-start">
+                                   <div className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center font-bold text-xs shrink-0">3</div>
+                                   <p className="text-sm text-gray-300">Wait for TV to show "Connected to Hotspot".</p>
+                                 </div>
+                               </div>
 
-                         <div className="flex flex-col gap-3">
-                           {[
-                             { name: 'Living Room TV', id: 'lr-tv' },
-                             { name: 'Bedroom Chromecast', id: 'br-cc' },
-                             { name: 'Kitchen Smart Display', id: 'ksd' }
-                           ].map((device) => (
-                             <button
-                               key={device.id}
-                               onClick={() => selectCastDevice(device.name)}
-                               className="flex items-center gap-4 p-4 rounded-2xl bg-white/5 hover:bg-white/10 border border-transparent hover:border-white/10 transition-all group text-left"
-                             >
-                               <div className="w-10 h-10 rounded-full bg-gray-800 flex items-center justify-center group-hover:scale-110 transition-transform">
-                                  <Info className="w-5 h-5 text-gray-500" />
+                               <div className="flex items-center gap-3 p-4 rounded-2xl bg-brand-primary/10 border border-brand-primary/20">
+                                 <input 
+                                   type="checkbox" 
+                                   id="hotspot-ready"
+                                   checked={isHotspotReady}
+                                   onChange={(e) => setIsHotspotReady(e.target.checked)}
+                                   className="w-5 h-5 accent-brand-primary rounded"
+                                 />
+                                 <label htmlFor="hotspot-ready" className="text-xs font-bold text-white cursor-pointer select-none">
+                                   My Hotspot is ON & TV is connected
+                                 </label>
                                </div>
-                               <div>
-                                 <p className="font-bold text-white text-sm">{device.name}</p>
-                                 <p className="text-[10px] text-gray-400 font-mono">Available on network</p>
+
+                               <button 
+                                 onClick={startDiscovery}
+                                 className="w-full py-4 bg-brand-primary text-white font-black rounded-2xl hover:bg-brand-primary/90 transition-all uppercase tracking-widest text-xs shadow-lg shadow-brand-primary/20"
+                               >
+                                 Scan for Devices
+                               </button>
+                             </div>
+                           ) : discoveryStep === 'scanning' ? (
+                             <div className="flex flex-col items-center justify-center py-10 gap-4">
+                               <div className="relative">
+                                 <div className="w-16 h-16 border-4 border-brand-primary/20 border-t-brand-primary rounded-full animate-spin" />
+                                 <div className="absolute inset-0 flex items-center justify-center">
+                                   <Cast className="w-6 h-6 text-brand-primary animate-pulse" />
+                                 </div>
                                </div>
-                             </button>
-                           ))}
+                               <div className="text-center">
+                                 <p className="text-white font-bold text-sm">Searching for devices...</p>
+                                 <p className="text-[10px] text-gray-500 mt-1">Listening for pings from Happy Cast...</p>
+                               </div>
+                             </div>
+                           ) : discoveredDevices.length > 0 ? (
+                             <div className="space-y-3">
+                               <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest mb-2 px-1">Nearby Devices</p>
+                               {discoveredDevices.map((device) => (
+                                 <motion.button
+                                   key={device.id}
+                                   initial={{ opacity: 0, x: -20 }}
+                                   animate={{ opacity: 1, x: 0 }}
+                                   onClick={() => selectCastDevice(device.name)}
+                                   className="flex items-center gap-4 p-4 rounded-2xl bg-white/5 hover:bg-white/10 border border-transparent hover:border-white/10 transition-all group text-left w-full"
+                                 >
+                                   <div className="w-10 h-10 rounded-full bg-gray-800 flex items-center justify-center group-hover:scale-110 transition-transform">
+                                      <Cast className="w-5 h-5 text-gray-500 group-hover:text-brand-primary" />
+                                   </div>
+                                   <div>
+                                     <p className="font-bold text-white text-sm">{device.name}</p>
+                                     <p className="text-[10px] text-gray-400 font-mono">{device.subtitle}</p>
+                                   </div>
+                                 </motion.button>
+                               ))}
+                               <button 
+                                 onClick={() => setDiscoveryStep('prep')}
+                                 className="w-full py-3 mt-4 text-[10px] font-bold text-gray-500 hover:text-white transition-colors uppercase tracking-widest"
+                               >
+                                 Rescan Network
+                               </button>
+                             </div>
+                           ) : (
+                             <div className="text-center py-10">
+                               <p className="text-gray-500 text-sm mb-4">No devices found</p>
+                               <button 
+                                 onClick={() => setDiscoveryStep('prep')}
+                                 className="text-[10px] font-bold text-brand-primary uppercase tracking-widest hover:underline"
+                               >
+                                 Check Settings
+                               </button>
+                             </div>
+                           )}
                          </div>
                          
-                         <div className="mt-8 flex justify-center">
-                           <div className="flex items-center gap-2 text-[10px] text-gray-500 font-medium">
-                             <div className="w-2 h-2 bg-brand-primary rounded-full animate-pulse" />
-                             Searching for nearby devices...
-                           </div>
+                         <div className="mt-8 pt-6 border-t border-white/5 text-center">
+                           <p className="text-[10px] text-gray-500 leading-relaxed max-w-[200px] mx-auto">
+                             Make sure your TV is connected to your mobile hotspot and the <span className="text-brand-primary">Happy Cast</span> app is open on the TV.
+                           </p>
                          </div>
                       </motion.div>
                       <div 
@@ -890,11 +1389,51 @@ export default function VideoPlayer({ video, onClose, isTamilanPlanActive, onPla
                     </div>
                   )}
                 </AnimatePresence>
-              </div>
-            )}
-          </div>
-        </div>
 
+                {/* Simple Yellow Progress Line for Ads - Strictly at bottom edge */}
+                {isAdPlaying && (
+                  <div className="absolute bottom-0 left-0 w-full h-[3px] z-[80] pointer-events-none bg-black/10">
+                    <div 
+                      className="h-full bg-yellow-400 transition-all duration-300 ease-out shadow-[0_0_8px_rgba(250,204,21,0.6)]"
+                      style={{ width: `${adDuration > 0 ? (adCurrentTime / adDuration) * 100 : 0}%` }}
+                    />
+                  </div>
+                )}
+
+                {/* Security Restriction Overlay for Screenshots */}
+                <AnimatePresence>
+                  {isScreenCaptureBlocked && (
+                    <motion.div
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      exit={{ opacity: 0 }}
+                      className="absolute inset-0 z-[100] bg-black flex flex-col items-center justify-center p-6 text-center select-none"
+                    >
+                      {/* Security Mesh Pattern to interfere with capture */}
+                      <div className="absolute inset-0 opacity-[0.03] pointer-events-none" 
+                           style={{ backgroundImage: 'radial-gradient(#fff 1px, transparent 1px)', backgroundSize: '4px 4px' }} />
+                      
+                      <div className="relative z-10 flex flex-col items-center">
+                        <div className="w-20 h-20 bg-red-600/20 rounded-full flex items-center justify-center mb-6 border border-red-600/50">
+                          <Lock className="w-10 h-10 text-red-600" />
+                        </div>
+                        <h2 className="text-2xl font-black text-white mb-2 tracking-tight uppercase">PROTECTED CONTENT</h2>
+                        <p className="text-gray-400 text-sm max-w-[280px] font-medium leading-relaxed">
+                          Screen capture and screenshots are restricted to protect copyrighted content.
+                          <span className="block mt-2 text-red-500/80 font-bold">PLEASE CLOSE CAPTURE TOOLS</span>
+                        </p>
+                        
+                        <div className="mt-8 flex items-center gap-2 text-[10px] font-bold text-gray-500 bg-white/5 py-1.5 px-4 rounded-full border border-white/10 tracking-widest uppercase">
+                          <div className="w-1.5 h-1.5 bg-red-600 rounded-full animate-pulse" />
+                          Security Active
+                        </div>
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+          </div>
+        
         <div className="p-4 md:px-12 flex flex-col gap-4 max-w-4xl mx-auto w-full">
           <h1 className="text-xl md:text-2xl font-bold leading-tight">
             {video.title}
@@ -1028,8 +1567,16 @@ export default function VideoPlayer({ video, onClose, isTamilanPlanActive, onPla
                 </div>
               )}
             </div>
+          <div className="mt-12 mb-20 flex justify-center">
+            <button 
+              onClick={onClose}
+              className="flex items-center gap-2 px-8 py-3 bg-white/5 hover:bg-white/10 rounded-2xl text-gray-400 hover:text-white transition-all border border-white/5 font-bold uppercase tracking-widest text-xs"
+            >
+              <ChevronLeft className="w-4 h-4" /> Exit Player
+            </button>
           </div>
         </div>
+      </div>
 
         {/* Subscription Modal */}
         <AnimatePresence>

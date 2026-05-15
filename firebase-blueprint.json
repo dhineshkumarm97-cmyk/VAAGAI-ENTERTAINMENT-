@@ -1,5 +1,18 @@
 {
   "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile information",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "nickname": { "type": "string" },
+        "avatarUrl": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "nickname", "avatarUrl"]
+    },
     "Comment": {
       "title": "Comment",
       "description": "A user comment on a video",
@@ -16,6 +29,10 @@
     }
   },
   "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "User profile records"
+    },
     "/comments/{commentId}": {
       "schema": "Comment",
       "description": "Global collection of comments for all videos"

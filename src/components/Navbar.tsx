@@ -1,14 +1,18 @@
 import React from 'react';
-import { Search, Video, Mic, ChevronLeft } from 'lucide-react';
+import { Search, Video, Mic, ChevronLeft, LogOut } from 'lucide-react';
 import { motion } from 'motion/react';
+import { UserProfile } from '../types';
+import { auth } from '../lib/firebase';
 
 interface NavbarProps {
+  userProfile: UserProfile | null;
   isTamilanPlanActive: boolean;
   searchQuery: string;
   onSearchChange: (value: string) => void;
 }
 
 export default function Navbar({ 
+  userProfile,
   isTamilanPlanActive, 
   searchQuery, 
   onSearchChange 
@@ -66,9 +70,6 @@ export default function Navbar({
             <Search className="w-5 h-5 text-gray-400" />
           </button>
         </form>
-        <button className="hidden sm:flex p-2.5 bg-gray-900 hover:bg-white/10 rounded-full transition-colors text-white">
-          <Mic className="w-5 h-5" />
-        </button>
       </div>
 
       <div className={`flex items-center gap-2 md:gap-4 ${isMobileSearchVisible ? 'hidden sm:flex' : 'flex'}`}>
@@ -78,7 +79,8 @@ export default function Navbar({
         >
           <Search className="w-6 h-6" />
         </button>
-        <Video className="hidden sm:block w-6 h-6 cursor-pointer hover:bg-white/10 rounded-full p-1 text-white" />
+
+        {/* No profile or logout here, they are in My Space now */}
       </div>
     </nav>
   );
