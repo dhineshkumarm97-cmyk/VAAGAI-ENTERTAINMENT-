@@ -1,6 +1,6 @@
 {
   "name": "VAAGAI ENTERTAINMENT",
-  "description": "A premium OTT platform for movies, TV shows, and original content.",
+  "description": "A minimalist OTT platform specializing in immersive 'only video box' cinematic experiences with AI-powered features.",
   "requestFramePermissions": [],
-  "majorCapabilities": []
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

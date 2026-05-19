@@ -14,6 +14,11 @@ export interface Video {
   channelAvatar: string;
   subscribers: string;
   language: string;
+  genre?: string;
+  ownerId?: string;
+  syncId?: string;
+  dubbedLanguages?: string[];
+  dubbedUrls?: Record<string, string>;
 }
 
 export interface Category {
@@ -28,4 +33,5 @@ export interface UserProfile {
   avatarUrl: string;
   createdAt: string;
   updatedAt?: string;
+  isTamilanPlanActive?: boolean;
 }

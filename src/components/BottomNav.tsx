@@ -1,15 +1,16 @@
 import React from 'react';
-import { Search, Sparkles } from 'lucide-react';
+import { Search, Sparkles, ShieldCheck, UploadCloud, DollarSign } from 'lucide-react';
 import { motion } from 'motion/react';
 import { UserProfile } from '../types';
 
 interface BottomNavProps {
-  activeTab: 'home' | 'search' | 'myspace';
-  onTabChange: (tab: 'home' | 'search' | 'myspace') => void;
+  activeTab: 'home' | 'search' | 'myspace' | 'admin' | 'monetization';
+  onTabChange: (tab: 'home' | 'search' | 'myspace' | 'admin' | 'monetization') => void;
   userProfile: UserProfile | null;
+  isAdmin?: boolean;
 }
 
-export default function BottomNav({ activeTab, onTabChange, userProfile }: BottomNavProps) {
+export default function BottomNav({ activeTab, onTabChange, userProfile, isAdmin }: BottomNavProps) {
   return (
     <div className="fixed bottom-0 left-0 right-0 z-50 bg-[#0a0a14]/95 backdrop-blur-lg border-t border-white/5 pb-safe">
       {/* Decorative Glow Line */}
@@ -22,9 +23,21 @@ export default function BottomNav({ activeTab, onTabChange, userProfile }: Botto
             activeTab === 'search' ? 'text-white' : 'text-gray-400'
           }`}
         >
-          <Search className="w-6 h-6" />
-          <span className="text-[10px] font-medium">Search</span>
+          <Search className="w-5 h-5 md:w-6 md:h-6" />
+          <span className="text-[9px] md:text-[10px] font-medium tracking-tight">Search</span>
         </button>
+
+        {isAdmin && (
+          <button 
+            onClick={() => onTabChange('admin')}
+            className={`flex flex-col items-center justify-center gap-1 transition-colors ${
+              activeTab === 'admin' ? 'text-white' : 'text-gray-400'
+            }`}
+          >
+            <ShieldCheck className="w-5 h-5 md:w-6 md:h-6" />
+            <span className="text-[9px] md:text-[10px] font-medium tracking-tight">Admin</span>
+          </button>
+        )}
 
         <button 
           onClick={() => onTabChange('home')}
@@ -38,8 +51,8 @@ export default function BottomNav({ activeTab, onTabChange, userProfile }: Botto
               className="absolute -top-1 w-10 h-10 bg-brand-primary/20 blur-xl rounded-full"
             />
           )}
-          <Sparkles className={`w-8 h-8 ${activeTab === 'home' ? 'text-white fill-white' : ''}`} />
-          <span className="text-[10px] font-medium">Home</span>
+          <Sparkles className={`w-7 h-7 md:w-8 md:h-8 ${activeTab === 'home' ? 'text-white fill-white' : ''}`} />
+          <span className="text-[9px] md:text-[10px] font-medium tracking-tight">Home</span>
         </button>
 
         <button 
@@ -48,7 +61,7 @@ export default function BottomNav({ activeTab, onTabChange, userProfile }: Botto
             activeTab === 'myspace' ? 'text-white' : 'text-gray-400'
           }`}
         >
-          <div className={`w-6 h-6 rounded-full overflow-hidden border-2 ${
+          <div className={`w-5 h-5 md:w-6 md:h-6 rounded-full overflow-hidden border-2 ${
             activeTab === 'myspace' ? 'border-brand-primary' : 'border-transparent'
           }`}>
             {userProfile ? (
@@ -57,7 +70,7 @@ export default function BottomNav({ activeTab, onTabChange, userProfile }: Botto
               <div className="w-full h-full bg-gray-700" />
             )}
           </div>
-          <span className="text-[10px] font-medium">My Space</span>
+          <span className="text-[9px] md:text-[10px] font-medium tracking-tight">Space</span>
         </button>
       </div>
     </div>

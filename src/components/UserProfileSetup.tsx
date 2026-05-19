@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { motion } from 'motion/react';
 import { User, Check, Edit2 } from 'lucide-react';
-import { db, auth } from '../lib/firebase';
+import { db, auth, handleFirestoreError, OperationType } from '../lib/firebase';
 import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
 
 interface UserProfileSetupProps {
@@ -30,6 +30,7 @@ export default function UserProfileSetup({ onComplete }: UserProfileSetupProps) 
     if (!nickname.trim() || !auth.currentUser) return;
 
     setIsLoading(true);
+    const path = `users/${auth.currentUser.uid}`;
     try {
       await setDoc(doc(db, 'users', auth.currentUser.uid), {
         uid: auth.currentUser.uid,
@@ -40,7 +41,7 @@ export default function UserProfileSetup({ onComplete }: UserProfileSetupProps) 
       });
       onComplete();
     } catch (error) {
-      console.error('Error saving profile:', error);
+      handleFirestoreError(error, OperationType.WRITE, path);
     } finally {
       setIsLoading(false);
     }

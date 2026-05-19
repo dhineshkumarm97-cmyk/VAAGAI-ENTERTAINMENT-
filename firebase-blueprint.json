@@ -13,6 +13,38 @@
       },
       "required": ["uid", "nickname", "avatarUrl"]
     },
+    "Video": {
+      "title": "Video",
+      "description": "A video record",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "thumbnail": { "type": "string" },
+        "videoUrl": { "type": "string" },
+        "category": { "type": "string" },
+        "views": { "type": "string" },
+        "uploadedAt": { "type": "string", "format": "date-time" },
+        "channelName": { "type": "string" },
+        "channelAvatar": { "type": "string" },
+        "subscribers": { "type": "string" },
+        "language": { "type": "string" },
+        "year": { "type": "string" },
+        "duration": { "type": "string" },
+        "rating": { "type": "string" },
+        "ownerId": { "type": "string" }
+      },
+      "required": ["title", "videoUrl", "ownerId"]
+    },
+    "Admin": {
+      "title": "Admin",
+      "description": "Identifies an administrator",
+      "type": "object",
+      "properties": {
+        "email": { "type": "string" }
+      },
+      "required": ["email"]
+    },
     "Comment": {
       "title": "Comment",
       "description": "A user comment on a video",
@@ -32,6 +64,14 @@
     "/users/{userId}": {
       "schema": "User",
       "description": "User profile records"
+    },
+    "/videos/{videoId}": {
+      "schema": "Video",
+      "description": "Admin-managed videos"
+    },
+    "/admins/{adminId}": {
+      "schema": "Admin",
+      "description": "List of administrators"
     },
     "/comments/{commentId}": {
       "schema": "Comment",

@@ -19,6 +19,14 @@ service cloud.firestore {
       return resource.data;
     }
 
+    function isAdmin() {
+      return isSignedIn() && (
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid)) ||
+        (request.auth.token.email_verified == true && 
+         request.auth.token.email in ['dhineshkumarm97@gmail.com', 'murugansouthindiadevotional@gmail.com'])
+      );
+    }
+
     // Validation for User
     function isValidUser(data) {
       return data.keys().hasAll(['uid', 'nickname', 'avatarUrl', 'createdAt', 'updatedAt']) &&
@@ -37,6 +45,34 @@ service cloud.firestore {
              data.userName is string && data.userName.size() <= 100 &&
              data.text is string && data.text.size() <= 2000 &&
              (data.get('likes', 0) is number);
+    }
+
+    // Validation for Video
+    function isValidVideo(data) {
+      return data.keys().hasAll(['title', 'videoUrl', 'uploadedAt']) &&
+             data.title is string && data.title.size() <= 200 &&
+             data.videoUrl is string && data.videoUrl.size() <= 1000 &&
+             data.uploadedAt is timestamp &&
+             (data.get('ownerId', '') is string && data.get('ownerId', '').size() <= 128) &&
+             (data.get('genre', '') is string) &&
+             (data.get('category', '') is string);
+    }
+
+    match /admins/{adminId} {
+      allow read: if isSignedIn();
+      allow write: if false; // Only manageable via console
+    }
+
+    match /videos/{videoId} {
+      allow read, list: if true;
+      allow create: if isSignedIn() && 
+                    (isAdmin() || (incoming().get('ownerId', '') == request.auth.uid)) && 
+                    isValidVideo(incoming()) && 
+                    incoming().uploadedAt == request.time;
+      allow update: if isSignedIn() && 
+                    (isAdmin() || (existing().get('ownerId', '') == request.auth.uid)) && 
+                    isValidVideo(incoming());
+      allow delete: if isAdmin() || (isSignedIn() && existing().get('ownerId', '') == request.auth.uid);
     }
 
     match /comments/{commentId} {
@@ -74,6 +110,10 @@ service cloud.firestore {
                     incoming().uid == userId &&
                     incoming().updatedAt == request.time &&
                     incoming().createdAt == existing().createdAt;
+    }
+
+    match /test/connection {
+      allow read: if true;
     }
   }
 }

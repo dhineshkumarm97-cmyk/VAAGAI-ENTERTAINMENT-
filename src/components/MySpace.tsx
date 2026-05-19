@@ -1,16 +1,28 @@
 import React from 'react';
-import { Settings, HelpCircle, ChevronRight, Plus, Edit2, Play, Bell } from 'lucide-react';
+import { Settings, HelpCircle, ChevronRight, Plus, Edit2, Play, Bell, DollarSign, Star, ShieldCheck } from 'lucide-react';
 import { motion } from 'motion/react';
 import { UserProfile, Video } from '../types';
 import { auth } from '../lib/firebase';
+import ResolvedImage from './ResolvedImage';
+import { clearAllLocalFiles } from '../lib/db';
 
 interface MySpaceProps {
   userProfile: UserProfile | null;
   watchlist: Video[];
   isTamilanPlanActive: boolean;
+  onNavigateToMonetization?: () => void;
+  onClearLocalVideos?: () => void;
+  onOpenAbout?: () => void;
 }
 
-export default function MySpace({ userProfile, watchlist, isTamilanPlanActive }: MySpaceProps) {
+export default function MySpace({ userProfile, watchlist, isTamilanPlanActive, onNavigateToMonetization, onClearLocalVideos, onOpenAbout }: MySpaceProps) {
+  const handleClearLocal = async () => {
+    if (window.confirm('Clear app local cache and temporary files?')) {
+      await clearAllLocalFiles();
+      if (onClearLocalVideos) onClearLocalVideos();
+      alert('Local storage cleared.');
+    }
+  };
   return (
     <div className="min-h-screen bg-[#0a0a0f] text-white pt-6 pb-24">
       {/* Header */}
@@ -20,7 +32,10 @@ export default function MySpace({ userProfile, watchlist, isTamilanPlanActive }:
             <span className="text-brand-primary font-bold">V</span>
           </div>
         </div>
-        <button className="flex items-center gap-2 text-gray-400 text-sm font-medium hover:text-white transition-colors">
+        <button 
+          onClick={onOpenAbout}
+          className="flex items-center gap-2 text-gray-400 text-sm font-medium hover:text-white transition-colors"
+        >
           <Settings className="w-5 h-5" />
           <span>Help & Settings</span>
         </button>
@@ -40,7 +55,7 @@ export default function MySpace({ userProfile, watchlist, isTamilanPlanActive }:
           <div className="flex flex-col items-center gap-2 min-w-[72px]">
             <div className="w-16 h-16 rounded-full p-[2px] bg-gradient-to-tr from-brand-primary to-blue-500">
               <div className="w-full h-full rounded-full border-2 border-[#0a0a0f] overflow-hidden">
-                <img src={userProfile?.avatarUrl} alt="You" className="w-full h-full object-cover" />
+                <ResolvedImage src={userProfile?.avatarUrl || ''} alt="You" className="w-full h-full object-cover" />
               </div>
             </div>
             <span className="text-xs font-medium text-gray-400">You</span>
@@ -64,26 +79,52 @@ export default function MySpace({ userProfile, watchlist, isTamilanPlanActive }:
         </div>
       </div>
 
-      {/* Notifications Section */}
+      {/* TAMILAN PLAN - New Section */}
       <div className="px-5 mb-10">
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-bold flex items-center gap-2">
-            Notifications
-          </h2>
-          <ChevronRight className="w-5 h-5 text-gray-600" />
+          <h2 className="text-lg font-bold">Your Plan</h2>
         </div>
-        <div className="bg-[#161621] rounded-xl p-5 border border-white/5">
-          <div className="flex items-start gap-4">
-            <div className="w-10 h-10 bg-brand-primary/10 rounded-full flex items-center justify-center text-brand-primary">
-              <Bell className="w-5 h-5" />
+        <div 
+          className={`rounded-2xl p-6 border transition-all ${
+            isTamilanPlanActive 
+              ? 'bg-green-500/10 border-green-500/30' 
+              : 'bg-brand-primary/10 border-brand-primary/30'
+          }`}
+        >
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${
+                isTamilanPlanActive ? 'bg-green-500' : 'bg-brand-primary'
+              }`}>
+                {isTamilanPlanActive ? <ShieldCheck className="w-6 h-6 text-white" /> : <Star className="w-6 h-6 text-white" />}
+              </div>
+              <div>
+                <h3 className="font-black text-white uppercase tracking-tighter">Tamilan Plan</h3>
+                <p className="text-xs text-gray-400 font-medium">
+                  {isTamilanPlanActive 
+                    ? 'Lifetime Free Access • Ad-free' 
+                    : 'Unlock Free Ad-free Streaming'}
+                </p>
+              </div>
             </div>
-            <div className="flex-1">
-              <p className="text-sm font-medium text-gray-200 mb-2">YOU'RE ALL CAUGHT UP</p>
-              <p className="text-xs text-gray-500 mb-4 leading-relaxed">Enable notifications to stay updated on new content releases and offers.</p>
-              <button className="text-xs font-bold bg-white/5 border border-white/10 px-4 py-2 rounded-lg hover:bg-white/10 transition-colors">
-                ALLOW
+            {!isTamilanPlanActive && (
+              <button 
+                onClick={() => {
+                  // Since we are in MySpace, we need a way to open the VideoPlayer subscription modal or just the quiz.
+                  // For now, I'll alert the user to take the test in the video player or I can implement a way to trigger it here.
+                  // But the simplest is to just mention it's active in the video player.
+                  // Actually, let's make it so they can trigger it here too.
+                  // But MySpace doesn't have the VideoPlayer context.
+                  window.dispatchEvent(new CustomEvent('open-tamilan-quiz'));
+                }}
+                className="bg-brand-primary text-white text-[10px] font-black px-4 py-2 rounded-lg uppercase tracking-widest shadow-lg active:scale-95 transition-all"
+              >
+                Activate Free
               </button>
-            </div>
+            )}
+            {isTamilanPlanActive && (
+              <span className="text-green-500 text-[10px] font-black uppercase tracking-widest">Active</span>
+            )}
           </div>
         </div>
       </div>
@@ -101,7 +142,7 @@ export default function MySpace({ userProfile, watchlist, isTamilanPlanActive }:
               className="flex-shrink-0 w-32 aspect-[2/3] rounded-lg overflow-hidden relative group"
               whileHover={{ scale: 1.05 }}
             >
-              <img 
+              <ResolvedImage 
                 src={video.thumbnail} 
                 alt={video.title} 
                 className="w-full h-full object-cover"
@@ -120,7 +161,14 @@ export default function MySpace({ userProfile, watchlist, isTamilanPlanActive }:
       </div>
 
       {/* Logout Button */}
-      <div className="px-5">
+      <div className="px-5 space-y-3">
+        <button 
+          onClick={handleClearLocal}
+          className="w-full py-4 rounded-xl border border-white/5 text-gray-500 font-medium hover:bg-white/5 hover:text-white transition-all flex items-center justify-center gap-2"
+        >
+          Clear App Cache
+        </button>
+
         <button 
           onClick={() => auth.signOut()}
           className="w-full py-4 rounded-xl border border-white/10 text-gray-400 font-medium hover:bg-white/5 hover:text-white transition-all flex items-center justify-center gap-2"
