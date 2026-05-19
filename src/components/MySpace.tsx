@@ -10,12 +10,21 @@ interface MySpaceProps {
   userProfile: UserProfile | null;
   watchlist: Video[];
   isTamilanPlanActive: boolean;
+  isProfileLoading?: boolean;
   onNavigateToMonetization?: () => void;
   onClearLocalVideos?: () => void;
   onOpenAbout?: () => void;
 }
 
-export default function MySpace({ userProfile, watchlist, isTamilanPlanActive, onNavigateToMonetization, onClearLocalVideos, onOpenAbout }: MySpaceProps) {
+export default function MySpace({ 
+  userProfile, 
+  watchlist, 
+  isTamilanPlanActive, 
+  isProfileLoading,
+  onNavigateToMonetization, 
+  onClearLocalVideos, 
+  onOpenAbout 
+}: MySpaceProps) {
   const [isClearing, setIsClearing] = React.useState(false);
 
   const handleClearLocal = async () => {
@@ -104,27 +113,27 @@ export default function MySpace({ userProfile, watchlist, isTamilanPlanActive, o
               </div>
               <div>
                 <h3 className="font-black text-white uppercase tracking-tighter">Tamilan Plan</h3>
-                <p className="text-xs text-gray-400 font-medium">
-                  {isTamilanPlanActive 
-                    ? 'Lifetime Free Access • Ad-free' 
-                    : 'Unlock Free Ad-free Streaming'}
-                </p>
+                <div className="flex flex-col gap-1">
+                  <p className="text-xs text-gray-400 font-medium">
+                    {isTamilanPlanActive 
+                      ? 'Lifetime Free Access • Ad-free' 
+                      : isProfileLoading 
+                        ? 'Checking status...' 
+                        : 'Unlock Free Ad-free Streaming'}
+                  </p>
+                </div>
               </div>
             </div>
-            {!isTamilanPlanActive && (
-              <button 
-                onClick={() => {
-                  // Since we are in MySpace, we need a way to open the VideoPlayer subscription modal or just the quiz.
-                  // For now, I'll alert the user to take the test in the video player or I can implement a way to trigger it here.
-                  // But the simplest is to just mention it's active in the video player.
-                  // Actually, let's make it so they can trigger it here too.
-                  // But MySpace doesn't have the VideoPlayer context.
-                  window.dispatchEvent(new CustomEvent('open-tamilan-quiz'));
-                }}
-                className="bg-brand-primary text-white text-[10px] font-black px-4 py-2 rounded-lg uppercase tracking-widest shadow-lg active:scale-95 transition-all"
-              >
-                Activate Free
-              </button>
+            {!isTamilanPlanActive && !isProfileLoading && (
+              <div className="flex flex-col gap-3 w-full sm:w-auto">
+                <button 
+                  onClick={onNavigateToMonetization}
+                  className="bg-white text-black text-[10px] font-black px-4 py-2.5 rounded-lg uppercase tracking-widest shadow-lg active:scale-95 transition-all flex items-center justify-center gap-2"
+                >
+                  <Star className="w-3 h-3" />
+                  Activate Plan
+                </button>
+              </div>
             )}
             {isTamilanPlanActive && (
               <span className="text-green-500 text-[10px] font-black uppercase tracking-widest">Active</span>

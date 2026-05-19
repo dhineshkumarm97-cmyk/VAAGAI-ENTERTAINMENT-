@@ -33,6 +33,7 @@ service cloud.firestore {
              data.uid is string && data.uid.size() <= 128 &&
              data.nickname is string && data.nickname.size() >= 2 && data.nickname.size() <= 20 &&
              data.avatarUrl is string && data.avatarUrl.size() <= 500 &&
+             (data.get('isTamilanPlanActive', false) is bool) &&
              data.createdAt is timestamp &&
              data.updatedAt is timestamp;
     }

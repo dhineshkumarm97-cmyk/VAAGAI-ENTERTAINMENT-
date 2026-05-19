@@ -17,7 +17,7 @@ import ProfileSelection from './components/ProfileSelection';
 import AboutModal from './components/AboutModal';
 import { auth, db, handleFirestoreError, OperationType } from './lib/firebase';
 import { onAuthStateChanged, User } from 'firebase/auth';
-import { doc, getDoc, updateDoc } from 'firebase/firestore';
+import { doc, getDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { Home, Compass, PlaySquare, MoreVertical, LogOut, Loader2, ShieldCheck, Search, Sparkles } from 'lucide-react';
 import { Video, UserProfile } from './types';
 import { fetchVideos, checkIfAdmin } from './services/firebaseService';
@@ -32,6 +32,7 @@ export default function App() {
   const [selectedLanguage, setSelectedLanguage] = useState<string | null>(null);
   const [selectedVideo, setSelectedVideo] = useState<Video | null>(null);
   const [isTamilanPlanActive, setIsTamilanPlanActive] = useState(false);
+  const [isProfileLoading, setIsProfileLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('');
   const [isSearching, setIsSearching] = useState(false);
@@ -39,10 +40,30 @@ export default function App() {
   const [isLoadingVideos, setIsLoadingVideos] = useState(true);
   const [isAdmin, setIsAdmin] = useState(false);
   const [isAboutOpen, setIsAboutOpen] = useState(false);
+
+  const syncPlanActive = async (status: boolean) => {
+    setIsTamilanPlanActive(status);
+    setUserProfile(prev => prev ? { ...prev, isTamilanPlanActive: status } : null);
+    
+    if (status && auth.currentUser) {
+      const userPath = `users/${auth.currentUser.uid}`;
+      try {
+        await updateDoc(doc(db, 'users', auth.currentUser.uid), {
+          isTamilanPlanActive: true,
+          updatedAt: serverTimestamp()
+        });
+      } catch (err) {
+        console.error('Error updating plan in Firestore:', err);
+      }
+    }
+  };
   const [searchHistory, setSearchHistory] = useState<string[]>(() => {
     const saved = localStorage.getItem('vaagai_search_history');
     return saved ? JSON.parse(saved) : [];
   });
+  const [aiResponse, setAiResponse] = useState<string | null>(null);
+  const [aiRecommendedIds, setAiRecommendedIds] = useState<string[]>([]);
+  const [isAISearchLoading, setIsAISearchLoading] = useState(false);
 
   useEffect(() => {
     localStorage.setItem('vaagai_search_history', JSON.stringify(searchHistory));
@@ -54,6 +75,41 @@ export default function App() {
       const filtered = prev.filter(item => item.toLowerCase() !== query.toLowerCase());
       return [query, ...filtered].slice(0, 10);
     });
+  };
+
+  const handleAISearch = async (query: string) => {
+    if (!query.trim()) return;
+    
+    setIsAISearchLoading(true);
+    setAiResponse(null);
+    setAiRecommendedIds([]);
+    
+    const videoContext = videos.map(v => ({
+      id: v.id,
+      title: v.title,
+      description: v.description,
+      language: v.language
+    }));
+
+    try {
+      const response = await fetch('/api/ai-search', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query, videoContext })
+      });
+      
+      const data = await response.json();
+      if (data.recommendedVideoIds) {
+        setAiRecommendedIds(data.recommendedVideoIds);
+        setAiResponse(data.aiResponse);
+        // Automatically switch to search tab if we got results
+        setActiveTab('search');
+      }
+    } catch (error) {
+      console.error('AI Search failed:', error);
+    } finally {
+      setIsAISearchLoading(false);
+    }
   };
 
   const loadVideos = async () => {
@@ -77,6 +133,8 @@ export default function App() {
     if (searchQuery.trim() === '') {
       setDebouncedSearchQuery('');
       setIsSearching(false);
+      setAiRecommendedIds([]);
+      setAiResponse(null);
       return;
     }
 
@@ -119,6 +177,8 @@ export default function App() {
       } else {
         setUserProfile(null);
         setIsAdmin(false);
+        setIsTamilanPlanActive(false);
+        setIsProfileLoading(false);
         if (appState !== 'splash') {
           setAppState('login');
         }
@@ -149,6 +209,7 @@ export default function App() {
     }
 
     try {
+      setIsProfileLoading(true);
       const savedLanguage = localStorage.getItem('vaagai_language');
       if (!savedLanguage) {
         setAppState('language');
@@ -175,9 +236,11 @@ export default function App() {
       const profileData = userDoc.data() as UserProfile;
       setUserProfile(profileData);
       setIsTamilanPlanActive(!!profileData.isTamilanPlanActive);
+      setIsProfileLoading(false);
       setAppState('profile_selection');
     } catch (error) {
       console.error('Error in post-login navigation:', error);
+      setIsProfileLoading(false);
       // If we can't check profile, maybe something is wrong with rules or connection
       // For now, let's try to go to profile setup as a fallback if they are logged in
       setAppState('profile_setup');
@@ -192,6 +255,12 @@ export default function App() {
 
   const filteredVideos = videos.filter(video => {
     const query = debouncedSearchQuery.toLowerCase();
+    
+    // If AI recommended IDs exist, filter by them
+    if (aiRecommendedIds.length > 0) {
+      return aiRecommendedIds.includes(video.id || '');
+    }
+
     const matchesSearch = video.title.toLowerCase().includes(query) || 
                          video.description?.toLowerCase().includes(query);
     
@@ -286,6 +355,20 @@ export default function App() {
               </div>
             ) : (
               <div className="p-4 md:p-8">
+                {aiResponse && (
+                  <div className="mb-8 bg-brand-primary/10 border border-brand-primary/20 rounded-3xl p-6 relative overflow-hidden">
+                    <div className="absolute top-0 right-0 p-4">
+                      <Sparkles className="w-8 h-8 text-brand-primary/30" />
+                    </div>
+                    <h3 className="text-sm font-black text-brand-primary uppercase tracking-widest mb-2 flex items-center gap-2">
+                      <Sparkles className="w-4 h-4" />
+                      AI Assistant
+                    </h3>
+                    <p className="text-lg font-medium text-white max-w-3xl leading-relaxed">
+                      {aiResponse}
+                    </p>
+                  </div>
+                )}
                 {/* Instant Suggestions */}
                 {!debouncedSearchQuery && searchQuery && (
                   <div className="mb-8 bg-white/5 rounded-3xl p-6 border border-white/5 animate-pulse">
@@ -377,13 +460,20 @@ export default function App() {
             userProfile={userProfile} 
             watchlist={videos.slice(0, 3)} 
             isTamilanPlanActive={isTamilanPlanActive}
+            isProfileLoading={isProfileLoading}
             onNavigateToMonetization={() => setActiveTab('monetization')}
             onClearLocalVideos={loadVideos}
             onOpenAbout={() => setIsAboutOpen(true)}
           />
         );
       case 'monetization':
-        return <Monetization />;
+        return (
+          <Monetization 
+            isTamilanPlanActive={isTamilanPlanActive}
+            isProfileLoading={isProfileLoading}
+            onPlanActive={() => syncPlanActive(true)}
+          />
+        );
       case 'admin':
         return <AdminDashboard onRefresh={loadVideos} />;
       default:
@@ -499,8 +589,10 @@ export default function App() {
             onSearchSubmit={(query) => {
               addToSearchHistory(query);
               setSearchQuery(query);
+              handleAISearch(query);
               setActiveTab('search');
             }}
+            isAISearching={isAISearchLoading}
           />
         )}
         
@@ -523,20 +615,8 @@ export default function App() {
         video={selectedVideo} 
         onClose={() => setSelectedVideo(null)} 
         isTamilanPlanActive={isTamilanPlanActive}
-        onPlanActive={async () => {
-          setIsTamilanPlanActive(true);
-          if (auth.currentUser) {
-            const userPath = `users/${auth.currentUser.uid}`;
-            try {
-              await updateDoc(doc(db, 'users', auth.currentUser.uid), {
-                isTamilanPlanActive: true,
-                updatedAt: new Date().toISOString()
-              });
-            } catch (err) {
-              handleFirestoreError(err, OperationType.UPDATE, userPath);
-            }
-          }
-        }}
+        isProfileLoading={isProfileLoading}
+        onPlanActive={() => syncPlanActive(true)}
         initialLanguage={selectedLanguage}
         onNextVideo={() => {
           if (!selectedVideo) return;

@@ -12,7 +12,7 @@ import {
   Scissors, MoreHorizontal, MoreVertical, Bell, Info, Lock,
   Play, Pause, RotateCcw, RotateCw, Volume2, VolumeX,
   Maximize, Minimize, Settings, MessageSquare, SkipBack, SkipForward,
-  Cast, Home, Languages, Sparkles, AudioLines, Loader2
+  Cast, Home, Languages, Sparkles, AudioLines, Loader2, Star
 } from 'lucide-react';
 import { Video } from '../types';
 import { db, auth, signInWithGoogle, handleFirestoreError, OperationType } from '../lib/firebase';
@@ -49,6 +49,7 @@ interface VideoPlayerProps {
   onPlanActive: () => void;
   onNextVideo: () => void;
   initialLanguage: string | null;
+  isProfileLoading?: boolean;
 }
 
 const MOCK_ADS = [
@@ -149,7 +150,15 @@ const getDriveID = (url: string) => {
 
 const isYouTube = (url: string) => !!getYouTubeID(url);
 
-export default function VideoPlayer({ video, onClose, isTamilanPlanActive, onPlanActive, onNextVideo, initialLanguage }: VideoPlayerProps) {
+export default function VideoPlayer({ 
+  video, 
+  onClose, 
+  isTamilanPlanActive, 
+  onPlanActive, 
+  onNextVideo, 
+  initialLanguage,
+  isProfileLoading
+}: VideoPlayerProps) {
   const [isAdPlaying, setIsAdPlaying] = useState(false);
   const [adQueue, setAdQueue] = useState<string[]>([]);
   const [currentAdIndex, setCurrentAdIndex] = useState(0);
@@ -548,7 +557,7 @@ export default function VideoPlayer({ video, onClose, isTamilanPlanActive, onPla
   useEffect(() => {
     const handleOpenQuiz = () => {
       if (!isTamilanPlanActive) {
-        startQuiz();
+        setShowSubscriptionModal(true);
       }
     };
     window.addEventListener('open-tamilan-quiz', handleOpenQuiz);
@@ -634,6 +643,7 @@ export default function VideoPlayer({ video, onClose, isTamilanPlanActive, onPla
     if (!video) return;
     
     if (!isTamilanPlanActive) {
+      if (isProfileLoading) return;
       setShowSubscriptionModal(true);
     } else {
       if (isDownloading) return;
@@ -652,29 +662,34 @@ export default function VideoPlayer({ video, onClose, isTamilanPlanActive, onPla
           a.click();
           document.body.removeChild(a);
         } else {
-          // Try to fetch the video as a blob to force download
-          const response = await fetch(urlToFetch);
-          if (!response.ok) throw new Error('Network response was not ok');
-          
-          const blob = await response.blob();
-          const url = window.URL.createObjectURL(blob);
-          const a = document.createElement('a');
-          a.href = url;
-          const fileName = video.title.replace(/[^a-z0-9]/gi, '_').toLowerCase() || 'video';
-          a.download = `${fileName}.mp4`;
-          document.body.appendChild(a);
-          a.click();
-          window.URL.revokeObjectURL(url);
-          document.body.removeChild(a);
+          try {
+            // Try to fetch the video as a blob to force download
+            const response = await fetch(urlToFetch);
+            if (!response.ok) throw new Error('Network response was not ok');
+            
+            const blob = await response.blob();
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            const fileName = video.title.replace(/[^a-z0-9]/gi, '_').toLowerCase() || 'video';
+            a.download = `${fileName}.mp4`;
+            document.body.appendChild(a);
+            a.click();
+            window.URL.revokeObjectURL(url);
+            document.body.removeChild(a);
+          } catch (fetchErr) {
+            console.warn('Direct fetch failed (likely CORS), falling back to simple link download:', fetchErr);
+            // Fallback: Try opening in a new tab if blob fetch fails (e.g. CORS)
+            const a = document.createElement('a');
+            a.href = urlToFetch;
+            a.target = '_blank';
+            a.rel = 'noopener noreferrer';
+            a.download = video.title;
+            a.click();
+          }
         }
       } catch (error) {
         console.error('Download failed:', error);
-        // Fallback: Try opening in a new tab if blob fetch fails (e.g. CORS)
-        const a = document.createElement('a');
-        a.href = resolvedVideoUrl || getProcessedVideoUrl(video.videoUrl);
-        a.target = '_blank';
-        a.download = video.title;
-        a.click();
       } finally {
         setIsDownloading(false);
       }
@@ -2307,10 +2322,28 @@ export default function VideoPlayer({ video, onClose, isTamilanPlanActive, onPla
                       startQuiz();
                       setShowSubscriptionModal(false);
                     }}
-                    className="w-full py-4 bg-white text-black font-black rounded-2xl hover:bg-brand-primary hover:text-white transition-all active:scale-95 shadow-xl uppercase tracking-widest"
+                    className="w-full py-4 bg-white text-black font-black rounded-2xl hover:bg-brand-primary hover:text-white transition-all active:scale-95 shadow-xl uppercase tracking-widest flex items-center justify-center gap-3"
                   >
+                    <Star className="w-5 h-5" />
                     Take Tamilan Test
                   </button>
+
+                  <a 
+                    href="https://youtube.com/@murugansouthindiadevotional?si=wqWd2awM_sw81Y4s"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={() => {
+                      // We'll give them the plan if they click it, as specified by user intent
+                      // In a real app we might verify, but here we just activate it
+                      if (onPlanActive) onPlanActive();
+                      setShowSubscriptionModal(false);
+                    }}
+                    className="w-full py-4 bg-[#FF0000] text-white font-black rounded-2xl hover:bg-[#CC0000] transition-all active:scale-95 shadow-xl uppercase tracking-widest flex items-center justify-center gap-3"
+                  >
+                    <Play className="w-5 h-5 fill-white" />
+                    Subscribe Channel
+                  </a>
+
                   <button 
                     onClick={() => setShowSubscriptionModal(false)}
                     className="w-full py-3 text-gray-500 font-bold text-sm hover:text-white transition-colors"

@@ -36,6 +36,7 @@ export default function UserProfileSetup({ onComplete }: UserProfileSetupProps) 
         uid: auth.currentUser.uid,
         nickname: nickname.trim(),
         avatarUrl: selectedAvatar,
+        isTamilanPlanActive: false,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       });

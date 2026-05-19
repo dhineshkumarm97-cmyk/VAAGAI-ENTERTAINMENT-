@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Search, Video, Mic, ChevronLeft, LogOut, Info, Clock, X } from 'lucide-react';
+import { Search, Video, Mic, ChevronLeft, LogOut, Info, Clock, X, Sparkles, Loader2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { UserProfile } from '../types';
 import { auth } from '../lib/firebase';
@@ -13,6 +13,7 @@ interface NavbarProps {
   activeTab?: string;
   searchHistory?: string[];
   onSearchSubmit?: (query: string) => void;
+  isAISearching?: boolean;
 }
 
 export default function Navbar({ 
@@ -23,7 +24,8 @@ export default function Navbar({
   onOpenAbout,
   activeTab,
   searchHistory = [],
-  onSearchSubmit
+  onSearchSubmit,
+  isAISearching
 }: NavbarProps) {
   const [isMobileSearchVisible, setIsMobileSearchVisible] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
@@ -96,9 +98,17 @@ export default function Navbar({
             />
             <button 
               type="submit"
-              className="px-5 bg-white/5 border-l border-white/10 hover:bg-white/10 transition-colors"
+              disabled={isAISearching}
+              className="px-5 bg-white/5 border-l border-white/10 hover:bg-white/10 transition-colors relative group disabled:opacity-50"
             >
-              <Search className="w-5 h-5 text-gray-400" />
+              {isAISearching ? (
+                <Loader2 className="w-5 h-5 text-brand-primary animate-spin" />
+              ) : (
+                <>
+                  <Search className="w-5 h-5 text-gray-400 group-hover:text-white transition-colors" />
+                  <Sparkles className="w-3 h-3 text-brand-primary absolute top-2 right-3 opacity-0 group-hover:opacity-100 transition-opacity" />
+                </>
+              )}
             </button>
           </form>
 
