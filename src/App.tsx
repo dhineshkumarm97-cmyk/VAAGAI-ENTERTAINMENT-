@@ -228,9 +228,9 @@ export default function App() {
               href="https://ais-dev-pvrxy3ot5rfdbkck6rqri5-650106038083.asia-east1.run.app"
               target="_blank"
               rel="noopener noreferrer"
-              className="fixed bottom-24 right-6 z-[90] bg-black/40 backdrop-blur-md rounded-full p-4 border border-white/20 shadow-lg hover:scale-110 transition-transform"
+              className="fixed bottom-24 right-6 z-[90] bg-black/40 backdrop-blur-md rounded-full p-6 border border-white/20 shadow-2xl hover:scale-110 transition-transform shadow-brand-primary/20"
             >
-              <Sparkles className="w-8 h-8 text-brand-primary" />
+              <Sparkles className="w-14 h-14 text-brand-primary" />
             </a>
             {filteredVideos.length > 0 ? (
               filteredVideos.map((video) => (

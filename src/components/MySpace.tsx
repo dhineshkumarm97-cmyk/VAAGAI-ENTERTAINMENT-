@@ -1,5 +1,5 @@
 import React from 'react';
-import { Settings, HelpCircle, ChevronRight, Plus, Edit2, Play, Bell, DollarSign, Star, ShieldCheck } from 'lucide-react';
+import { Settings, HelpCircle, ChevronRight, Plus, Edit2, Play, Bell, DollarSign, Star, ShieldCheck, Loader2, Eraser } from 'lucide-react';
 import { motion } from 'motion/react';
 import { UserProfile, Video } from '../types';
 import { auth } from '../lib/firebase';
@@ -16,10 +16,14 @@ interface MySpaceProps {
 }
 
 export default function MySpace({ userProfile, watchlist, isTamilanPlanActive, onNavigateToMonetization, onClearLocalVideos, onOpenAbout }: MySpaceProps) {
+  const [isClearing, setIsClearing] = React.useState(false);
+
   const handleClearLocal = async () => {
     if (window.confirm('Clear app local cache and temporary files?')) {
+      setIsClearing(true);
       await clearAllLocalFiles();
       if (onClearLocalVideos) onClearLocalVideos();
+      setIsClearing(false);
       alert('Local storage cleared.');
     }
   };
@@ -164,9 +168,20 @@ export default function MySpace({ userProfile, watchlist, isTamilanPlanActive, o
       <div className="px-5 space-y-3">
         <button 
           onClick={handleClearLocal}
-          className="w-full py-4 rounded-xl border border-white/5 text-gray-500 font-medium hover:bg-white/5 hover:text-white transition-all flex items-center justify-center gap-2"
+          disabled={isClearing}
+          className="w-full py-4 rounded-xl border border-white/5 text-gray-500 font-medium hover:bg-white/5 hover:text-white transition-all flex items-center justify-center gap-2 disabled:opacity-50"
         >
-          Clear App Cache
+          {isClearing ? (
+            <>
+              <Loader2 className="w-4 h-4 animate-spin" />
+              <span>Clearing Cache...</span>
+            </>
+          ) : (
+            <>
+              <Eraser className="w-4 h-4" />
+              <span>Clear App Cache</span>
+            </>
+          )}
         </button>
 
         <button 

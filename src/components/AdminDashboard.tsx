@@ -15,12 +15,18 @@ export const AdminDashboard: React.FC<{ onRefresh?: () => void }> = ({ onRefresh
   const [videos, setVideos] = useState<Video[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [successMsg, setSuccessMsg] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const loadVideos = async () => {
     setIsLoading(true);
-    const data = await fetchVideos();
-    setVideos(data);
-    setIsLoading(false);
+    try {
+      const data = await fetchVideos();
+      setVideos(data);
+    } catch (error) {
+      console.error('Error loading videos:', error);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   useEffect(() => {
@@ -59,7 +65,7 @@ export const AdminDashboard: React.FC<{ onRefresh?: () => void }> = ({ onRefresh
       setThumbnail(null);
       setSuccessMsg(true);
       setTimeout(() => setSuccessMsg(false), 3000);
-      loadVideos();
+      await loadVideos();
       if (onRefresh) onRefresh();
     } catch (error) {
       alert('Failed to add video. Make sure you have admin permissions.');
@@ -69,14 +75,21 @@ export const AdminDashboard: React.FC<{ onRefresh?: () => void }> = ({ onRefresh
   };
 
   const handleDeleteVideo = async (id: string) => {
-    if (!window.confirm('Delete this video?')) return;
+    if (!window.confirm('Are you sure you want to delete this video?')) return;
+    
+    setDeletingId(id);
     try {
       await deleteVideo(id);
-      loadVideos();
+      // Optimistic update
+      setVideos(prev => prev.filter(v => v.id !== id));
       if (onRefresh) onRefresh();
     } catch (error) {
       console.error('Delete error:', error);
       alert(`Failed to delete video: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      // Refresh to get consistent state if it failed
+      await loadVideos();
+    } finally {
+      setDeletingId(null);
     }
   };
 
@@ -303,9 +316,18 @@ export const AdminDashboard: React.FC<{ onRefresh?: () => void }> = ({ onRefresh
 
                     <button 
                       onClick={() => video.id && handleDeleteVideo(video.id)}
-                      className="p-2.5 text-gray-500 hover:text-red-500 hover:bg-red-500/10 rounded-xl transition-all"
+                      disabled={deletingId === video.id}
+                      className={`p-2.5 rounded-xl transition-all ${
+                        deletingId === video.id 
+                          ? 'text-gray-400 bg-gray-500/10 cursor-not-allowed' 
+                          : 'text-gray-500 hover:text-red-500 hover:bg-red-500/10'
+                      }`}
                     >
-                      <Trash2 className="w-4 h-4" />
+                      {deletingId === video.id ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <Trash2 className="w-4 h-4" />
+                      )}
                     </button>
                   </div>
                 ))
